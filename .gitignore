@@ -1,0 +1,6 @@
+bin/
+obj/
+node_modules/
+src/TraceMQ.Api/wwwroot/
+*.db
+ARCHITECTURE.md
