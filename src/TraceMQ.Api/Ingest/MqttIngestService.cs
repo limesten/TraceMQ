@@ -1,0 +1,96 @@
+using System.Buffers;
+using System.Threading.Channels;
+using Microsoft.Extensions.Options;
+using MQTTnet;
+using MQTTnet.Protocol;
+using TraceMQ.Api.Model;
+
+namespace TraceMQ.Api.Ingest;
+
+public sealed class MqttIngestService : BackgroundService
+{
+    private readonly ChannelWriter<LogMessage> _writer;
+    private readonly MqttOptions _options;
+    private readonly ILogger<MqttIngestService> _log;
+
+    public MqttIngestService(
+        Channel<LogMessage> channel,
+        IOptions<MqttOptions> options,
+        ILogger<MqttIngestService> log
+    )
+    {
+        _writer = channel.Writer;
+        _options = options.Value;
+        _log = log;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var client = new MqttClientFactory().CreateMqttClient();
+
+        client.ApplicationMessageReceivedAsync += e =>
+        {
+            ReadOnlySequence<byte> payload = e.ApplicationMessage.Payload;
+
+            var msg = new LogMessage(
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                e.ApplicationMessage.Topic,
+                payload.ToArray(),
+                (byte)e.ApplicationMessage.QualityOfServiceLevel,
+                e.ApplicationMessage.Retain);
+
+            _writer.TryWrite(msg);
+            _log.LogInformation("queued {Topic}", msg.Topic);
+
+            return Task.CompletedTask;
+        };
+
+        var clientOptions = new MqttClientOptionsBuilder()
+            .WithTcpServer(_options.Host, _options.Port)
+            .WithClientId(_options.ClientId)
+            .Build();
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (!client.IsConnected)
+                {
+                    await client.ConnectAsync(clientOptions, stoppingToken);
+                    _log.LogInformation("Connected to {Host}:{Port}", _options.Host, _options.Port);
+
+                    foreach (var topic in _options.Topics)
+                    {
+                        await client.SubscribeAsync(
+                            new MqttTopicFilterBuilder()
+                                .WithTopic(topic)
+                                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtMostOnce)
+                                .Build(),
+                            stoppingToken);
+
+                        _log.LogInformation("Subscribed to {Topic}", topic);
+                    }
+                }
+
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex, "MQTT connection failed; retrying in 5s");
+                try { await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken); }
+                catch (OperationCanceledException) { break; }
+            }
+        }
+
+        if (client.IsConnected)
+        {
+            await client.DisconnectAsync(new MqttClientDisconnectOptions(), CancellationToken.None);
+        }
+
+        _writer.TryComplete();
+    }
+}

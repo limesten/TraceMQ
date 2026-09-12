@@ -11,6 +11,7 @@
     <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.*" />
     <Content Remove="wwwroot\**" />
     <EmbeddedResource Include="wwwroot\**" />
+    <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
   </ItemGroup>
 
   <Target Name="BuildFrontend" BeforeTargets="BeforeBuild" Condition="'$(Configuration)'=='Release'">
