@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.86" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.*" />
     <Content Remove="wwwroot\**" />
     <EmbeddedResource Include="wwwroot\**" />

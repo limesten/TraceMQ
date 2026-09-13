@@ -2,6 +2,7 @@ using Microsoft.Extensions.FileProviders;
 using System.Reflection;
 using TraceMQ.Api.Ingest;
 using TraceMQ.Api.Model;
+using TraceMQ.Api.Storage;
 using System.Threading.Channels;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +16,7 @@ builder.Services.AddSingleton(_ => Channel.CreateBounded<LogMessage>(
     }
 ));
 builder.Services.AddHostedService<MqttIngestService>();
+builder.Services.AddHostedService<WriterService>();
 
 var app = builder.Build();
 
