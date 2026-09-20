@@ -11,7 +11,7 @@ MAC_RID  := osx-$(shell uname -m | sed 's/x86_64/x64/')
 WIN_RID  := win-x64
 
 .DEFAULT_GOAL := help
-.PHONY: help run watch web frontend build clean \
+.PHONY: help run watch web frontend build check clean \
         publish-win publish-win-fd publish-mac publish-all
 
 help: ## Show this list
@@ -37,6 +37,32 @@ frontend: $(WEB)/node_modules ## Force a frontend rebuild into the API's wwwroot
 
 build: ## Debug build of the API (does not touch the frontend)
 	dotnet build $(API)
+
+# --- verify -----------------------------------------------------------------
+# One gate. The exit code is the whole signal, for a human and for an agent loop
+# (PLAN.md section 16). Steps with nothing to run yet SKIP loudly rather than
+# passing quietly: a gate whose holes you cannot see is worse than no gate.
+
+check: $(WEB)/node_modules ## Build, lint and test everything; the goal gate
+	@echo "==> dotnet build"
+	@dotnet build $(API) --nologo -v quiet
+	@echo "==> dotnet test"
+	@if find tests -name '*.csproj' 2>/dev/null | grep -q .; then \
+		dotnet test --nologo -v quiet; \
+	else \
+		echo "    SKIPPED - no test project under tests/ (PLAN.md section 14)"; \
+	fi
+	@echo "==> oxlint"
+	@cd $(WEB) && npm run --silent lint
+	@echo "==> vitest"
+	@if find $(WEB)/src -name '*.test.ts' -o -name '*.test.tsx' 2>/dev/null | grep -q .; then \
+		cd $(WEB) && npx --no-install vitest run; \
+	else \
+		echo "    SKIPPED - no frontend tests yet (PLAN.md section 14)"; \
+	fi
+	@echo "==> frontend build"
+	@cd $(WEB) && npm run --silent build
+	@echo "==> check passed"
 
 # --- publish ----------------------------------------------------------------
 # Release implies the csproj's BuildFrontend target, so npm runs first.

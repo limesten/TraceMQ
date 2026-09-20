@@ -4,6 +4,7 @@ node_modules/
 src/TraceMQ.Api/wwwroot/
 *.db*
 ARCHITECTURE.md
+PLAN.md
 loadtest
 dist/
 .DS_Store
