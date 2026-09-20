@@ -21,6 +21,7 @@ public class WriterServiceTests
     private static WriterService NewWriter(TempDb db, Channel<LogMessage> channel) =>
         new(channel,
             db.Factory,
+            new WriterQueue(),
             Options.Create(new StorageOptions { DbPath = db.Path, BatchSize = 500, FlushIntervalMs = 20 }),
             NullLogger<WriterService>.Instance);
 

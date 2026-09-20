@@ -13,6 +13,7 @@ public sealed class WriterService : BackgroundService
 {
     private readonly SqliteConnectionFactory _factory;
     private readonly ChannelReader<LogMessage> _reader;
+    private readonly WriterQueue _queue;
     private readonly ILogger<WriterService> _log;
     private readonly int _batchSize;
     private readonly TimeSpan _flushInterval;
@@ -20,11 +21,13 @@ public sealed class WriterService : BackgroundService
     public WriterService(
         Channel<LogMessage> channel,
         SqliteConnectionFactory factory,
+        WriterQueue queue,
         IOptions<StorageOptions> options,
         ILogger<WriterService> log)
     {
         _reader = channel.Reader;
         _factory = factory;
+        _queue = queue;
         _log = log;
         _batchSize = options.Value.BatchSize;
         _flushInterval = TimeSpan.FromMilliseconds(options.Value.FlushIntervalMs);
@@ -37,8 +40,14 @@ public sealed class WriterService : BackgroundService
         var batch = new List<LogMessage>(_batchSize);
         var written = 0L;
 
-        while (await WaitForBatchAsync(batch, stoppingToken))
+        while (await WaitForWorkAsync(batch, stoppingToken))
         {
+            // Queued work first: it is rare, and a retention sweep or a backfill waiting
+            // behind a busy stream would never get a turn.
+            await DrainQueueAsync(connection, stoppingToken);
+
+            if (batch.Count == 0) continue;
+
             try
             {
                 await FlushAsync(connection, batch, stoppingToken);
@@ -54,18 +63,46 @@ public sealed class WriterService : BackgroundService
         _log.LogInformation("Writer stopped after {Written} messages", written);
     }
 
-    private async Task<bool> WaitForBatchAsync(List<LogMessage> batch, CancellationToken ct)
+    private async Task DrainQueueAsync(SqliteConnection connection, CancellationToken ct)
     {
-        bool hasData;
+        while (_queue.Reader.TryRead(out var item))
+        {
+            try
+            {
+                await item.Run(connection, ct);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                // The item's own continuation already carries the failure; this is for the log.
+                _log.LogError(ex, "Queued write {Name} failed", item.Name);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Wake on a message or on queued work, whichever comes first, then take whatever
+    /// messages are available. Waiting on the message channel alone would starve the queue
+    /// on an idle line, which is exactly when a retention sweep wants to run.
+    /// </summary>
+    private async Task<bool> WaitForWorkAsync(List<LogMessage> batch, CancellationToken ct)
+    {
         try
         {
-            hasData = await _reader.WaitToReadAsync(ct);
+            var messages = _reader.WaitToReadAsync(ct).AsTask();
+            var queued = _queue.Reader.WaitToReadAsync(ct).AsTask();
+            var first = await Task.WhenAny(messages, queued);
+
+            if (first == messages && !await messages && _queue.Reader.Completion.IsCompleted)
+            {
+                return false;
+            }
         }
         catch (OperationCanceledException)
         {
             return false;
         }
-        if (!hasData) return false;
+
+        if (!_reader.TryPeek(out _)) return true;
 
         using var timeout = new CancellationTokenSource(_flushInterval);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);

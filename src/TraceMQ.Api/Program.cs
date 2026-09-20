@@ -18,6 +18,7 @@ builder.Services.Configure<MqttOptions>(builder.Configuration.GetSection("Mqtt")
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
 builder.Services.AddSingleton<SqliteConnectionFactory>();
 builder.Services.AddSingleton<MessageQuery>();
+builder.Services.AddSingleton<WriterQueue>();
 
 var dropped = new DroppedCounter();
 builder.Services.AddSingleton(dropped);
@@ -46,6 +47,7 @@ builder.Services.AddSingleton(sp => CorrelationPaths.Load(
 
 builder.Services.AddHostedService<MqttIngestService>();
 builder.Services.AddHostedService<WriterService>();
+builder.Services.AddHostedService<RetentionService>();
 
 var app = builder.Build();
 
