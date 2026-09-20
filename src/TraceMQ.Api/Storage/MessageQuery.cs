@@ -6,8 +6,7 @@ using TraceMQ.Api.Topics;
 namespace TraceMQ.Api.Storage;
 
 public sealed record MessageRow(
-    long Id, long Ts, string Topic, string? CorrelationKey, int Qos, bool Retained, long Size,
-    string? Preview);
+    long Id, long Ts, string Topic, string? CorrelationKey, int Qos, bool Retained, long Size);
 
 public sealed record MessageDetail(
     long Id, long Ts, string Topic, string? CorrelationKey, int Qos, bool Retained,
@@ -67,10 +66,7 @@ public sealed class MessageQuery(SqliteConnectionFactory factory, MessageRing ri
             return found
                 .OrderByDescending(m => m.Id)
                 .Select(m => new MessageRow(
-                    m.Id, m.TimestampMs, m.Topic, m.CorrelationKey, m.Qos, m.Retained, m.Payload.Length,
-                    PayloadPreview.From(m.Payload.Length > PayloadPreview.HeadBytes
-                        ? m.Payload[..PayloadPreview.HeadBytes]
-                        : m.Payload)))
+                    m.Id, m.TimestampMs, m.Topic, m.CorrelationKey, m.Qos, m.Retained, m.Payload.Length))
                 .ToArray();
         }
 
@@ -115,16 +111,13 @@ public sealed class MessageQuery(SqliteConnectionFactory factory, MessageRing ri
         AppendTopicPredicate(cmd, where, filter.Topic);
 
         cmd.CommandText = $"""
-            SELECT id, ts, topic, correlation_key, qos, retained, length(payload),
-                   substr(payload, 1, $head)
+            SELECT id, ts, topic, correlation_key, qos, retained, length(payload)
             FROM messages
             {(where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : string.Empty)}
             ORDER BY id DESC
             LIMIT $limit;
             """;
         cmd.Parameters.AddWithValue("$limit", limit);
-        // Only the head travels: the whole payload belongs to /api/messages/{id}.
-        cmd.Parameters.AddWithValue("$head", PayloadPreview.HeadBytes);
 
         var rows = new List<MessageRow>(Math.Min(limit, 256));
         using var reader = cmd.ExecuteReader();
@@ -137,8 +130,7 @@ public sealed class MessageQuery(SqliteConnectionFactory factory, MessageRing ri
                 reader.IsDBNull(3) ? null : reader.GetString(3),
                 reader.IsDBNull(4) ? 0 : reader.GetInt32(4),
                 !reader.IsDBNull(5) && reader.GetInt64(5) != 0,
-                reader.IsDBNull(6) ? 0 : reader.GetInt64(6),
-                PayloadPreview.From(ReadPayload(reader, 7))));
+                reader.IsDBNull(6) ? 0 : reader.GetInt64(6)));
         }
         return rows;
     }

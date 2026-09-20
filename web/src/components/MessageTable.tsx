@@ -13,7 +13,7 @@ function Row({ row, delta, selected, onSelect }: {
     selected: boolean;
     onSelect: () => void;
 }) {
-    const { tail } = splitTopic(row.topic);
+    const { head, tail } = splitTopic(row.topic);
     // A gap of a minute or more is the thing being hunted.
     const slow = delta !== null && delta >= 60_000;
 
@@ -36,24 +36,9 @@ function Row({ row, delta, selected, onSelect }: {
             >
                 {formatDelta(delta)}
             </span>
-            {/* The last three segments only. Sharing the cell with the dimmed prefix meant
-                65 characters competing for about 33, and the prefix is the part every row
-                under one topic filter has in common. The full topic is in the payload pane
-                header, and on hover here. */}
-            <span
-                title={row.topic}
-                className={`min-w-0 basis-[46%] truncate font-mono text-[11.5px] ${
-                    selected ? 'text-ink' : 'text-topic'
-                }`}
-            >
-                {tail}
-            </span>
-            <span
-                className={`min-w-0 grow truncate font-mono text-[11.5px] ${
-                    row.preview ? 'text-ink-dim' : 'text-topic-head italic'
-                }`}
-            >
-                {row.preview ?? `${row.size} bytes, not text`}
+            <span className="min-w-0 grow truncate font-mono text-[11.5px]">
+                <span className="text-topic-head">{head}</span>
+                <span className={selected ? 'text-ink' : 'text-topic'}>{tail}</span>
             </span>
         </button>
     );
@@ -95,8 +80,7 @@ export function MessageTable() {
             <div className="flex h-[34px] shrink-0 items-center gap-3 border-b border-hairline bg-panel px-3.5 text-[10.5px] tracking-wider text-ink-faint uppercase">
                 <span className="w-[92px] shrink-0">Time</span>
                 <span className="w-[58px] shrink-0 text-right">Delta</span>
-                <span className="basis-[46%]">Topic</span>
-                <span className="grow">Payload</span>
+                <span className="grow">Topic</span>
             </div>
 
             {pending.length > 0 && (

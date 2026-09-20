@@ -63,41 +63,6 @@ public class MessageQueryTests
     }
 
     [Fact]
-    public void ListCarriesABoundedPreviewFromBothSources()
-    {
-        // The rule the list endpoint keeps is that a row is small, not that it says nothing
-        // about the payload. Ring and database must agree on what the preview is.
-        var (db, ring, query) = NewQuery();
-        using var _db = db;
-        var payload = "{\"state\":\"RUNNING\",\"pad\":\"" + new string('x', 5_000) + "\"}";
-        Insert(db, 1, "codeit/a", payload: payload);
-        var id = ring.NextId();
-        ring.Add(new LogMessage(id, 1, "codeit/a", Encoding.UTF8.GetBytes(payload), 0, false, null));
-
-        var fromDb = query.List(new MessageFilter(BeforeId: 1000)).Single();
-        var fromRing = query.List(new MessageFilter(AfterId: 0)).Single();
-
-        Assert.Equal(fromDb.Preview, fromRing.Preview);
-        Assert.StartsWith("{\"state\":\"RUNNING\"", fromDb.Preview);
-        Assert.True(fromDb.Preview!.Length <= PayloadPreview.MaxChars);
-        // The row knows the real size even though it only carries a slice of it.
-        Assert.True(fromDb.Size > 5_000);
-    }
-
-    [Fact]
-    public void BinaryPayloadsHaveNoPreview()
-    {
-        var (db, _, query) = NewQuery();
-        using var _db = db;
-        db.Execute("""
-            INSERT INTO messages (id, ts, topic, correlation_key, qos, retained, payload)
-            VALUES (1, 1, 'codeit/a', NULL, 0, 0, x'00ff00ff');
-            """);
-
-        Assert.Null(query.List(new MessageFilter(BeforeId: 1000)).Single().Preview);
-    }
-
-    [Fact]
     public void CorrelationSearchIsExactAndCaseInsensitive()
     {
         var (db, _, query) = NewQuery();
