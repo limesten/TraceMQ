@@ -1,27 +1,100 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../api';
+import { useEffect, useState } from 'react';
+import { api, type MessageDetail } from '../api';
 import { formatBytes, formatTime } from '../format';
+import { base64ToBytes, hexDump, toJsonLines, tryParseJson } from '../json';
 import { useView } from '../store';
+
+/**
+ * Above this, pretty-printing is done on request. Parsing and laying out a megabyte of JSON
+ * blocks the frame, and the payloads that big are usually being checked for size or for one
+ * field near the top, not read end to end.
+ */
+const AUTO_FORMAT_LIMIT = 200 * 1024;
+
+const kindClass: Record<string, string> = {
+    key: 'text-json-key',
+    string: 'text-json-string',
+    number: 'text-json-number',
+    boolean: 'text-json-boolean',
+    null: 'text-json-null',
+    punct: 'text-json-punct',
+};
+
+function JsonView({ value }: { value: unknown }) {
+    return (
+        <div className="whitespace-pre">
+            {toJsonLines(value).map((line, i) => (
+                <div key={i}>
+                    <span>{line.pad}</span>
+                    <span className="text-json-key">{line.key}</span>
+                    <span className="text-json-punct">{line.colon}</span>
+                    <span className={kindClass[line.valueKind]}>{line.value}</span>
+                    <span className="text-json-punct">{line.punct}</span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function Body({ message }: { message: MessageDetail }) {
+    const [forceFormat, setForceFormat] = useState(false);
+
+    // A new message is a fresh decision about whether to format it.
+    useEffect(() => setForceFormat(false), [message.id]);
+
+    if (message.encoding === 'base64') {
+        return (
+            <pre className="whitespace-pre text-topic">{hexDump(base64ToBytes(message.text))}</pre>
+        );
+    }
+
+    const tooBig = message.size > AUTO_FORMAT_LIMIT && !forceFormat;
+    const parsed = tooBig ? { ok: false as const } : tryParseJson(message.text);
+
+    if (parsed.ok) return <JsonView value={parsed.value} />;
+
+    return (
+        <>
+            {tooBig && (
+                <button
+                    type="button"
+                    onClick={() => setForceFormat(true)}
+                    className="mb-3 rounded border border-control px-2.5 py-1 text-[11px] text-ink-dim hover:bg-hover hover:text-ink"
+                >
+                    Format anyway ({formatBytes(message.size)})
+                </button>
+            )}
+            <pre className="whitespace-pre-wrap text-topic">{message.text}</pre>
+        </>
+    );
+}
 
 export function PayloadPane() {
     const selectedId = useView((s) => s.selectedId);
+    const [copied, setCopied] = useState(false);
 
     const { data: message, isLoading } = useQuery({
         queryKey: ['message', selectedId],
         queryFn: () => api.message(selectedId as number),
         enabled: selectedId !== null,
+        staleTime: Infinity,
     });
+
+    useEffect(() => setCopied(false), [selectedId]);
+
+    const paneClass = 'flex w-[42%] min-w-[340px] max-w-[760px] shrink-0 flex-col bg-ground';
 
     if (selectedId === null) {
         return (
-            <section className="flex w-[42%] min-w-[340px] max-w-[760px] shrink-0 items-center justify-center bg-ground">
+            <section className={`${paneClass} items-center justify-center`}>
                 <p className="text-xs text-ink-faint">Select a message to see its payload.</p>
             </section>
         );
     }
 
     return (
-        <section className="flex w-[42%] min-w-[340px] max-w-[760px] shrink-0 flex-col bg-ground">
+        <section className={paneClass}>
             <div className="flex shrink-0 flex-col gap-1.5 border-b border-hairline bg-panel px-[18px] py-3">
                 <div className="flex items-center gap-2.5">
                     <span className="font-mono text-xs text-ink">
@@ -30,7 +103,20 @@ export function PayloadPane() {
                     {message && (
                         <span className="rounded bg-hover px-[7px] py-0.5 text-[10.5px] text-ink-dim">
                             {formatBytes(message.size)} · {message.encoding} · QoS {message.qos}
+                            {message.retained && ' · retained'}
                         </span>
+                    )}
+                    <span className="grow" />
+                    {message && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                void navigator.clipboard.writeText(message.text).then(() => setCopied(true));
+                            }}
+                            className="rounded border border-control px-2.5 py-0.5 text-[11px] text-ink-dim hover:bg-hover hover:text-ink"
+                        >
+                            {copied ? 'Copied' : 'Copy'}
+                        </button>
                     )}
                 </div>
                 <span className="font-mono text-[11px] leading-normal break-all text-ink-dim">
@@ -50,8 +136,7 @@ export function PayloadPane() {
 
             <div className="grow overflow-auto px-[18px] py-4 font-mono text-xs leading-relaxed scroll-thin">
                 {isLoading && <p className="text-ink-faint">Loading…</p>}
-                {/* Syntax-coloured pretty printing lands in Phase 7. */}
-                {message && <pre className="whitespace-pre-wrap text-topic">{message.text}</pre>}
+                {message && <Body message={message} />}
             </div>
         </section>
     );
