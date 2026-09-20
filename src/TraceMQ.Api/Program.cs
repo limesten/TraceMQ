@@ -1,5 +1,6 @@
 using Microsoft.Extensions.FileProviders;
 using System.Reflection;
+using TraceMQ.Api.Correlation;
 using TraceMQ.Api.Ingest;
 using TraceMQ.Api.Model;
 using TraceMQ.Api.Storage;
@@ -32,6 +33,11 @@ builder.Services.AddSingleton(_ => Channel.CreateBounded<LogMessage>(
     },
     itemDropped: _ => dropped.Increment()
 ));
+
+builder.Services.AddSingleton(sp => CorrelationPaths.Load(
+    sp.GetRequiredService<SqliteConnectionFactory>(),
+    sp.GetRequiredService<IConfiguration>(),
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger("Correlation")));
 
 builder.Services.AddHostedService<MqttIngestService>();
 builder.Services.AddHostedService<WriterService>();

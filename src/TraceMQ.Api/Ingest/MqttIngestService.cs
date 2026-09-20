@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 using MQTTnet;
 using MQTTnet.Protocol;
+using TraceMQ.Api.Correlation;
 using TraceMQ.Api.Model;
 
 namespace TraceMQ.Api.Ingest;
@@ -11,16 +12,19 @@ public sealed class MqttIngestService : BackgroundService
 {
     private readonly ChannelWriter<LogMessage> _writer;
     private readonly MqttOptions _options;
+    private readonly CorrelationExtractor _correlation;
     private readonly ILogger<MqttIngestService> _log;
 
     public MqttIngestService(
         Channel<LogMessage> channel,
         IOptions<MqttOptions> options,
+        CorrelationExtractor correlation,
         ILogger<MqttIngestService> log
     )
     {
         _writer = channel.Writer;
         _options = options.Value;
+        _correlation = correlation;
         _log = log;
     }
 
@@ -31,13 +35,15 @@ public sealed class MqttIngestService : BackgroundService
         client.ApplicationMessageReceivedAsync += e =>
         {
             ReadOnlySequence<byte> payload = e.ApplicationMessage.Payload;
+            var bytes = payload.ToArray();
 
             var msg = new LogMessage(
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 e.ApplicationMessage.Topic,
-                payload.ToArray(),
+                bytes,
                 (byte)e.ApplicationMessage.QualityOfServiceLevel,
-                e.ApplicationMessage.Retain);
+                e.ApplicationMessage.Retain,
+                _correlation.Extract(bytes));
 
             _writer.TryWrite(msg);
 
