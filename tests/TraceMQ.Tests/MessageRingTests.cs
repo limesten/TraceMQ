@@ -153,3 +153,99 @@ public class MessageRingTests
         Assert.DoesNotContain(51L, writtenIds);
     }
 }
+
+public class MessageRingByteCapTests
+{
+    private static LogMessage Add(MessageRing ring, int payloadBytes)
+    {
+        var msg = new LogMessage(ring.NextId(), 0, "codeit/a", new byte[payloadBytes], 0, false, null);
+        ring.Add(msg);
+        return msg;
+    }
+
+    [Fact]
+    public void TracksTheBytesItHolds()
+    {
+        var ring = new MessageRing(capacity: 100, maxBytes: 10_000);
+
+        Add(ring, 100);
+        Add(ring, 250);
+
+        Assert.Equal(350, ring.BytesHeld);
+        Assert.Equal(1, ring.OldestHeld);
+    }
+
+    [Fact]
+    public void EvictsTheOldestOnceThePayloadBudgetIsReached()
+    {
+        // The defect this exists for: bounding by message count alone is not a bound on
+        // memory. 100 000 messages of 5 KB is half a gigabyte of payload held alive, and
+        // these services publish payloads far larger than 5 KB.
+        var ring = new MessageRing(capacity: 1_000, maxBytes: 1_000);
+
+        for (var i = 0; i < 10; i++) Add(ring, 200);
+
+        Assert.True(ring.BytesHeld <= 1_000);
+        Assert.Equal(10, ring.HighWater);
+        // Only the newest handful survive, far short of the 1 000-message capacity.
+        Assert.True(ring.OldestHeld > 1, $"expected eviction, oldest held is {ring.OldestHeld}");
+        Assert.All(ring.Latest(100), m => Assert.True(m.Id >= ring.OldestHeld));
+    }
+
+    [Fact]
+    public void OneOversizedPayloadEvictsManySmallOnes()
+    {
+        var ring = new MessageRing(capacity: 1_000, maxBytes: 1_000);
+        for (var i = 0; i < 5; i++) Add(ring, 100);
+
+        var big = Add(ring, 900);
+
+        Assert.True(ring.BytesHeld <= 1_000);
+        Assert.Contains(big.Id, ring.Latest(100).Select(m => m.Id));
+    }
+
+    [Fact]
+    public void ThePayloadCapNeverEvictsTheMessageJustAdded()
+    {
+        // Even a payload larger than the whole budget stays: the newest message is the one
+        // the live pane is about to show.
+        var ring = new MessageRing(capacity: 10, maxBytes: 100);
+
+        var huge = Add(ring, 5_000);
+
+        Assert.Equal([huge.Id], ring.Latest(10).Select(m => m.Id));
+    }
+
+    [Fact]
+    public void CountStillBoundsTheRingWhenPayloadsAreSmall()
+    {
+        var ring = new MessageRing(capacity: 4, maxBytes: 1_000_000);
+
+        for (var i = 0; i < 10; i++) Add(ring, 1);
+
+        Assert.Equal([10L, 9L, 8L, 7L], ring.Latest(100).Select(m => m.Id));
+        Assert.Equal(7, ring.OldestHeld);
+    }
+
+    [Fact]
+    public void BytesHeldDoesNotDriftAsTheRingWraps()
+    {
+        var ring = new MessageRing(capacity: 8, maxBytes: 1_000_000);
+
+        for (var i = 0; i < 100; i++) Add(ring, 10);
+
+        // Eight slots of ten bytes, no matter how many times it wrapped.
+        Assert.Equal(80, ring.BytesHeld);
+    }
+
+    [Fact]
+    public void ConcurrentProducersKeepTheAccountingStraight()
+    {
+        var ring = new MessageRing(capacity: 10_000, maxBytes: 1_000_000_000);
+
+        Parallel.For(0, 5_000, _ => Add(ring, 20));
+
+        Assert.Equal(5_000, ring.HighWater);
+        Assert.Equal(5_000 * 20, ring.BytesHeld);
+    }
+}

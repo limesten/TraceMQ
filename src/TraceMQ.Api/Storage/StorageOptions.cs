@@ -17,4 +17,13 @@ public sealed class StorageOptions
 
     /// <summary>Commit after this long even if the batch is not full.</summary>
     public int FlushIntervalMs { get; set; } = 100;
+
+    /// <summary>How many messages the live pane's in-memory ring holds.</summary>
+    public int RingCapacity { get; set; } = 100_000;
+
+    /// <summary>
+    /// And how many payload bytes, whichever limit is reached first. Count alone is not a
+    /// bound on memory: 100 000 messages of 5 KB is half a gigabyte held alive.
+    /// </summary>
+    public long RingBytes { get; set; } = 256L * 1024 * 1024;
 }

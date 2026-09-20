@@ -6,6 +6,7 @@ using TraceMQ.Api.Model;
 using TraceMQ.Api.Storage;
 using TraceMQ.Api.Endpoints;
 using System.Threading.Channels;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -37,7 +38,11 @@ builder.Services.AddSingleton(_ => Channel.CreateBounded<LogMessage>(
 ));
 
 builder.Services.AddSingleton<BrokerState>();
-builder.Services.AddSingleton(_ => new MessageRing(100_000));
+builder.Services.AddSingleton(sp =>
+{
+    var storage = sp.GetRequiredService<IOptions<StorageOptions>>().Value;
+    return new MessageRing(storage.RingCapacity, storage.RingBytes);
+});
 builder.Services.AddSingleton(_ => new RecentKeys(20));
 
 builder.Services.AddSingleton(sp => new CorrelationSettings(CorrelationPaths.Load(

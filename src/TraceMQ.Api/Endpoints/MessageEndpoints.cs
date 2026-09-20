@@ -59,6 +59,8 @@ public static class MessageEndpoints
                 Dropped = dropped.Count,
                 HighWaterId = ring.HighWater,
                 RingCapacity = ring.Capacity,
+                RingHeld = ring.HighWater == 0 ? 0 : ring.HighWater - ring.OldestHeld + 1,
+                RingBytes = ring.BytesHeld,
                 DbPath = factory.DbPath,
                 DbBytes = file.Exists ? file.Length : 0,
                 storage.Value.RetentionDays,
