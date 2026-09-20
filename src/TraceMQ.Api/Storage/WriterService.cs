@@ -109,20 +109,22 @@ public sealed class WriterService : BackgroundService
         await using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
-            INSERT INTO messages (ts, topic, correlation_key, qos, retained, payload)
-            VALUES ($ts, $topic, $correlationKey, $qos, $retained, $payload);
+            INSERT INTO messages (id, ts, topic, correlation_key, qos, retained, payload)
+            VALUES ($id, $ts, $topic, $correlationKey, $qos, $retained, $payload);
             """;
 
+        var id = insert.CreateParameter(); id.ParameterName = "$id";
         var ts = insert.CreateParameter(); ts.ParameterName = "$ts";
         var topic = insert.CreateParameter(); topic.ParameterName = "$topic";
         var correlationKey = insert.CreateParameter(); correlationKey.ParameterName = "$correlationKey";
         var qos = insert.CreateParameter(); qos.ParameterName = "$qos";
         var retained = insert.CreateParameter(); retained.ParameterName = "$retained";
         var payload = insert.CreateParameter(); payload.ParameterName = "$payload";
-        insert.Parameters.AddRange([ts, topic, correlationKey, qos, retained, payload]);
+        insert.Parameters.AddRange([id, ts, topic, correlationKey, qos, retained, payload]);
 
         foreach (var msg in batch)
         {
+            id.Value = msg.Id;
             ts.Value = msg.TimestampMs;
             topic.Value = msg.Topic;
             correlationKey.Value = (object?)msg.CorrelationKey ?? DBNull.Value;

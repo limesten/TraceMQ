@@ -5,6 +5,7 @@ using MQTTnet;
 using MQTTnet.Protocol;
 using TraceMQ.Api.Correlation;
 using TraceMQ.Api.Model;
+using TraceMQ.Api.Storage;
 
 namespace TraceMQ.Api.Ingest;
 
@@ -13,18 +14,21 @@ public sealed class MqttIngestService : BackgroundService
     private readonly ChannelWriter<LogMessage> _writer;
     private readonly MqttOptions _options;
     private readonly CorrelationExtractor _correlation;
+    private readonly MessageRing _ring;
     private readonly ILogger<MqttIngestService> _log;
 
     public MqttIngestService(
         Channel<LogMessage> channel,
         IOptions<MqttOptions> options,
         CorrelationExtractor correlation,
+        MessageRing ring,
         ILogger<MqttIngestService> log
     )
     {
         _writer = channel.Writer;
         _options = options.Value;
         _correlation = correlation;
+        _ring = ring;
         _log = log;
     }
 
@@ -38,6 +42,7 @@ public sealed class MqttIngestService : BackgroundService
             var bytes = payload.ToArray();
 
             var msg = new LogMessage(
+                _ring.NextId(),
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 e.ApplicationMessage.Topic,
                 bytes,
@@ -45,6 +50,9 @@ public sealed class MqttIngestService : BackgroundService
                 e.ApplicationMessage.Retain,
                 _correlation.Extract(bytes));
 
+            // The ring first: the live pane must see the message even if the writer is behind
+            // or the channel drops it.
+            _ring.Add(msg);
             _writer.TryWrite(msg);
 
             return Task.CompletedTask;

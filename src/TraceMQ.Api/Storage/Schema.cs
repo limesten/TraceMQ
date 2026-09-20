@@ -132,6 +132,15 @@ public static class Schema
         return cmd.ExecuteScalar() is not null;
     }
 
+    /// <summary>The highest id on disk, or 0 for an empty database. Seeds the ring.</summary>
+    public static long LastMessageId(SqliteConnectionFactory factory)
+    {
+        using var connection = factory.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT COALESCE(MAX(id), 0) FROM messages;";
+        return Convert.ToInt64(cmd.ExecuteScalar());
+    }
+
     private static int ReadUserVersion(SqliteConnection connection)
     {
         using var cmd = connection.CreateCommand();

@@ -24,8 +24,9 @@ public class WriterServiceTests
             Options.Create(new StorageOptions { DbPath = db.Path, BatchSize = 500, FlushIntervalMs = 20 }),
             NullLogger<WriterService>.Instance);
 
-    private static LogMessage Message(long ts, string topic, string payload, string? key = null) =>
-        new(ts, topic, Encoding.UTF8.GetBytes(payload), 0, false, key);
+    // Ids come from ingest, not from SQLite, so the tests assign them the way ingest does.
+    private static LogMessage Message(long id, string topic, string payload, string? key = null) =>
+        new(id, 1_000_000 + id, topic, Encoding.UTF8.GetBytes(payload), 0, false, key);
 
     private static async Task WaitForRows(TempDb db, int expected)
     {
@@ -48,7 +49,7 @@ public class WriterServiceTests
 
         for (var i = 0; i < 1500; i++)
         {
-            Assert.True(channel.Writer.TryWrite(Message(1000 + i, $"codeit/a/{i % 7}", $$"""{"n":{{i}}}""")));
+            Assert.True(channel.Writer.TryWrite(Message(i + 1, $"codeit/a/{i % 7}", $$"""{"n":{{i}}}""")));
         }
 
         await WaitForRows(db, 1500);
@@ -89,7 +90,7 @@ public class WriterServiceTests
         var writer = NewWriter(db, channel);
         await writer.StartAsync(CancellationToken.None);
 
-        channel.Writer.TryWrite(new LogMessage(1, "codeit/a/binary", [0x00, 0xFF, 0x00, 0xFF], 0, false, null));
+        channel.Writer.TryWrite(new LogMessage(1, 1, "codeit/a/binary", [0x00, 0xFF, 0x00, 0xFF], 0, false, null));
 
         await WaitForRows(db, 1);
         await writer.StopAsync(CancellationToken.None);
@@ -110,7 +111,7 @@ public class WriterServiceTests
 
         for (var i = 0; i < 100; i++)
         {
-            channel.Writer.TryWrite(Message(i, "codeit/a", i == 50 ? "}}not json{{" : """{"ok":1}"""));
+            channel.Writer.TryWrite(Message(i + 1, "codeit/a", i == 50 ? "}}not json{{" : """{"ok":1}"""));
         }
 
         await WaitForRows(db, 100);
@@ -130,6 +131,7 @@ public class WriterServiceTests
         await writer.StartAsync(CancellationToken.None);
 
         // What MqttIngestService does per message: extract, then hand off.
+        var nextId = 0L;
         foreach (var payload in new[]
         {
             """{"trigger":{"uid":"7347ba7c-d1e5-41c4-be7e-c1b19e3a0b0c"}}""",
@@ -138,7 +140,7 @@ public class WriterServiceTests
         })
         {
             var bytes = Encoding.UTF8.GetBytes(payload);
-            channel.Writer.TryWrite(new LogMessage(1, "codeit/a", bytes, 0, false, extractor.Extract(bytes)));
+            channel.Writer.TryWrite(new LogMessage(++nextId, 1, "codeit/a", bytes, 0, false, extractor.Extract(bytes)));
         }
 
         await WaitForRows(db, 3);
