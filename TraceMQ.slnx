@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/TraceMQ.Api/TraceMQ.Api.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TraceMQ.Tests/TraceMQ.Tests.csproj" />
+  </Folder>
 </Solution>

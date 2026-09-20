@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+using TraceMQ.Api.Storage;
 
 namespace TraceMQ.Api.Endpoints;
 
@@ -6,15 +6,21 @@ public static class MessageEndpoints
 {
     public static void MapMessageEndpoints(this WebApplication app)
     {
-
-        app.MapGet("/api/messages", async (SqliteConnection connection, int limit = 50) =>
+        // Phase 3 replaces this with the full surface in PLAN.md section 5. For now it is
+        // the smallest thing that keeps the dev loop working against the v1 schema.
+        app.MapGet("/api/messages", async (SqliteConnectionFactory factory, int limit = 50) =>
         {
-            var messages = new List<object>();
-
+            await using var connection = await factory.OpenAsync();
             await using var cmd = connection.CreateCommand();
-            cmd.CommandText = "SELECT id, ts, topic, sequence_id, service, qos, retained, payload FROM messages ORDER BY ts DESC LIMIT $limit";
-            cmd.Parameters.AddWithValue("$limit", limit);
+            cmd.CommandText = """
+                SELECT id, ts, topic, correlation_key, qos, retained, length(payload)
+                FROM messages
+                ORDER BY id DESC
+                LIMIT $limit;
+                """;
+            cmd.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 1000));
 
+            var messages = new List<object>();
             await using var reader = await cmd.ExecuteReaderAsync();
             while (await reader.ReadAsync())
             {
@@ -23,18 +29,17 @@ public static class MessageEndpoints
                     Id = reader.GetInt64(0),
                     Ts = reader.GetInt64(1),
                     Topic = reader.GetString(2),
-                    SequenceId = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    Service = reader.IsDBNull(4) ? null : reader.GetString(4),
-                    Qos = reader.IsDBNull(5) ? (long?)null : reader.GetInt64(5),
-                    Retained = reader.IsDBNull(6) ? (long?)null : reader.GetInt64(6),
-                    Payload = reader.GetString(7),
+                    CorrelationKey = reader.IsDBNull(3) ? null : reader.GetString(3),
+                    Qos = reader.IsDBNull(4) ? (long?)null : reader.GetInt64(4),
+                    Retained = reader.IsDBNull(5) ? (long?)null : reader.GetInt64(5),
+                    Size = reader.IsDBNull(6) ? 0 : reader.GetInt64(6),
                 });
             }
 
             return Results.Ok(messages);
         });
 
-
-        app.MapGet("/api/ping", () => new { message = "pongz", at = DateTimeOffset.Now });
+        app.MapGet("/api/status", (SqliteConnectionFactory factory, DroppedCounter dropped) =>
+            Results.Ok(new { Dropped = dropped.Count, DbPath = factory.DbPath }));
     }
 }
