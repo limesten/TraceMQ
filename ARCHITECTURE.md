@@ -31,18 +31,22 @@ MQTT broker ──subscribe(codeit/#)──▶ ┌──────────
                                               browser (React)
 ```
 
-Four components inside the one host:
+Five components inside the one host:
 
 | Component           | Type                | Job                                                                                                                                     |
 | ------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `MqttIngestService` | `BackgroundService` | One MQTT client. Subscribes to configured wildcards. Extracts the correlation key. Pushes to a bounded channel. Never touches the database. |
-| `WriterService`     | `BackgroundService` | Owns the single SQLite writer connection. Drains the channel and batch-inserts.                                                         |
-| `RetentionService`  | `BackgroundService` | Deletes rows past the retention window on a timer.                                                                                      |
+| `WriterService`     | `BackgroundService` | Owns the single SQLite writer connection. Drains the channel and batch-inserts, and runs queued work between batches.                   |
+| `WriterQueue`       | singleton           | How retention, the correlation backfill and settings get a write done without opening a second connection.                              |
+| `RetentionService`  | `BackgroundService` | Deletes rows past the retention window on a timer, through the queue.                                                                   |
 | `WebApplication`    | ASP.NET Core        | Read-only API plus the embedded React app.                                                                                              |
 
-The live pane reads the **in-memory ring buffer** (last ~100k messages). SQLite is only
-touched for history and for traces. Because it is one process, that is a field access,
-not a query.
+The live pane reads the **in-memory ring buffer**, bounded by BOTH message count and total
+payload bytes (`Storage:RingCapacity`, `Storage:RingBytes`, default 100 000 and 256 MB).
+A count alone is not a bound on memory: 100 000 messages of 5 KB is half a gigabyte held
+alive. SQLite is only touched for history, for traces, and for the first page of the live
+table — the ring serves the poll after it, by cursor. Because it is one process, that is a
+field access, not a query.
 
 ---
 
@@ -104,14 +108,13 @@ CREATE TABLE settings (      -- holds correlation_paths, as a JSON array
 The partial index on `correlation_key` skips the noise topics (`plc/conveyor/state` and
 similar) that carry no key.
 
-`correlation_key` is extracted at ingest, from the payload, using the first of the
-configured `correlation_paths` that yields a value — `trigger.uid` in the current
-deployment. Extraction is a `Utf8JsonReader` that walks only the path segments and bails
-on the first non-match, so a malformed payload costs nothing and throws nothing. Search is
-exact equality; `COLLATE NOCASE` keeps the index usable for it and stops a service that
-emits uppercase GUIDs from silently missing a lowercase search.
+`correlation_key` is extracted at ingest by a `Utf8JsonReader` that walks only the
+configured paths and bails on the first mismatch, so a malformed payload costs nothing and
+throws nothing. The first of `correlation_paths` that yields a scalar wins (`trigger.uid`
+today). Search is exact equality, and `COLLATE NOCASE` keeps the index usable for it while
+stopping a service that emits uppercase GUIDs from missing a lowercase search.
 
-There is no `service` column. Topic segment 1 already carries it.
+No `service` column: topic segment 1 already carries it.
 
 ---
 
@@ -130,7 +133,9 @@ PRAGMA busy_timeout = 5000;
 
 **2. Exactly one writer connection**, owned by `WriterService`. Never write from a
 request thread. One writer means `SQLITE_BUSY` on writes cannot happen. Readers open
-their own short-lived connections.
+their own short-lived connections. Anything else that must write — retention, the
+correlation backfill, settings — hands the work to `WriterQueue` and awaits it; the writer
+runs it on its own connection, between batches.
 
 **3. Batch inserts inside a transaction.** This is the difference between hundreds of
 rows per second and tens of thousands. Commit every 500 rows or 100 ms, whichever comes
@@ -175,7 +180,7 @@ GET  /api/messages/{id}             one message, with its payload
 GET  /api/correlations/recent       keys seen recently on the wire, from the ring buffer
 GET  /api/settings                  { correlationPaths: [...] }
 PUT  /api/settings                  rewrites correlation_key across the table
-GET  /api/status                    broker state, msgs/sec, dropped, row count, db size
+GET  /api/status                    broker state, dropped, ring occupancy, db path and size
 ```
 
 Server-side filtering, batched frames. Never push 3000 msg/s at a browser. That includes
@@ -184,12 +189,10 @@ runs in SQL, not in the browser.
 
 Three rules the shape depends on:
 
-- **Payloads never ride on the list endpoint.** The UI shows one payload at a time, in a
-  pane, on click. A list row carries the payload's size, not its bytes.
-- **Page by `id`, never by `ts`.** `afterId` fetches newer rows for the live tail,
-  `beforeId` older ones for scrolling back.
-- **Payloads come back as `{ text, encoding }`** — UTF-8 when it decodes, base64 when it
-  does not.
+- **Payloads never ride on the list endpoint.** A row carries the payload's size, not its
+  bytes; the UI fetches one payload at a time, on click.
+- **Page by `id`, never `ts`.** `afterId` for the live tail, `beforeId` for scrolling back.
+- **Payloads come back as `{ text, encoding }`** — UTF-8 when it decodes, base64 otherwise.
 
 `PUT /api/settings` is the only write in the API. It runs on the writer connection and
 rewrites the whole column:
@@ -286,14 +289,20 @@ Database at `C:\ProgramData\CodeIT\tracemq\data.db`.
 | **QoS 0 for the subscription**             | The logger must never become a slow consumer that makes the broker queue for it.                                                                                |
 | **`ORDER BY ts` under a live tail**        | Millisecond timestamps collide constantly at 1500 msg/s, so the same row comes back twice, or never, as new rows land. Page by `id`.                            |
 | **`GetString` on the payload column**      | `payload` is a BLOB. Reading it as a string throws or mangles on the first non-UTF-8 payload. Decode explicitly, fall back to base64.                           |
+| **Binding a config array over a default**  | The configuration binder APPENDS to a collection property that already holds items, so a default of `["codeit/#"]` plus the same value in appsettings subscribes twice and every message is recorded twice. Default the property empty.                |
+| **`CommonApplicationData` off Windows**    | It is `%ProgramData%` on Windows and `/usr/share` elsewhere, which is not writable. A Production build crashed at startup on macOS and Linux before reaching any configuration.                                                                        |
+| **A completed channel is not a wait**      | Once ingest completes the message channel, its awaiter returns synchronously forever. Re-awaiting it in a loop is a spin that burns cores with nothing in the log. Latch it and wait on something else.                                                |
+| **`COALESCE` needs two arguments**         | The correlation backfill builds one `json_extract` per configured path. With a single path — the default — `COALESCE(x)` is a syntax error.                                                                                                             |
 | **JSON functions on a BLOB**               | From SQLite 3.45 `json_extract` and `json_valid` read a BLOB argument as JSONB, not as JSON text. Without `CAST(payload AS TEXT)` the backfill writes nulls.    |
 
 ---
 
 ## 8. Dev loop
 
-- `dotnet watch` on the API (port 5000)
-- `npm run dev` with Vite proxying `/api` to `localhost:5000`
-- A recorded set of real messages replayed into a local Mosquitto for test data
+- `make watch` on the API (port 5027), `make web` for Vite on 5173 proxying `/api` to it
+- `make check` is the gate: build, xUnit, oxlint, Vitest, frontend build. Steps with
+  nothing to run yet skip loudly rather than passing quietly
+- `mosquitto_pub` into a local broker for traffic, or `loadtest/orchestrator.py` for the
+  three load scenarios, which compare against the run history in `loadtest/results`
 
 Two moving parts in development, one artifact in production.
