@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api, type MessageDetail } from '../api';
 import { formatBytes, formatTime } from '../format';
 import { base64ToBytes, hexDump, toJsonLines, tryParseJson } from '../json';
@@ -37,11 +37,26 @@ function JsonView({ value }: { value: unknown }) {
     );
 }
 
+// Keyed on the message id by its caller, so selecting a different message remounts it and
+// the "format anyway" decision starts fresh without an effect resetting it.
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+
+    return (
+        <button
+            type="button"
+            onClick={() => {
+                void navigator.clipboard.writeText(text).then(() => setCopied(true));
+            }}
+            className="rounded border border-control px-2.5 py-0.5 text-[11px] text-ink-dim hover:bg-hover hover:text-ink"
+        >
+            {copied ? 'Copied' : 'Copy'}
+        </button>
+    );
+}
+
 function Body({ message }: { message: MessageDetail }) {
     const [forceFormat, setForceFormat] = useState(false);
-
-    // A new message is a fresh decision about whether to format it.
-    useEffect(() => setForceFormat(false), [message.id]);
 
     if (message.encoding === 'base64') {
         return (
@@ -72,7 +87,6 @@ function Body({ message }: { message: MessageDetail }) {
 
 export function PayloadPane() {
     const selectedId = useView((s) => s.selectedId);
-    const [copied, setCopied] = useState(false);
 
     const { data: message, isLoading } = useQuery({
         queryKey: ['message', selectedId],
@@ -80,8 +94,6 @@ export function PayloadPane() {
         enabled: selectedId !== null,
         staleTime: Infinity,
     });
-
-    useEffect(() => setCopied(false), [selectedId]);
 
     const paneClass = 'flex w-[42%] min-w-[340px] max-w-[760px] shrink-0 flex-col bg-ground';
 
@@ -107,17 +119,7 @@ export function PayloadPane() {
                         </span>
                     )}
                     <span className="grow" />
-                    {message && (
-                        <button
-                            type="button"
-                            onClick={() => {
-                                void navigator.clipboard.writeText(message.text).then(() => setCopied(true));
-                            }}
-                            className="rounded border border-control px-2.5 py-0.5 text-[11px] text-ink-dim hover:bg-hover hover:text-ink"
-                        >
-                            {copied ? 'Copied' : 'Copy'}
-                        </button>
-                    )}
+                    {message && <CopyButton key={message.id} text={message.text} />}
                 </div>
                 <span className="font-mono text-[11px] leading-normal break-all text-ink-dim">
                     {message?.topic ?? ''}
@@ -136,7 +138,7 @@ export function PayloadPane() {
 
             <div className="grow overflow-auto px-[18px] py-4 font-mono text-xs leading-relaxed scroll-thin">
                 {isLoading && <p className="text-ink-faint">Loading…</p>}
-                {message && <Body message={message} />}
+                {message && <Body key={message.id} message={message} />}
             </div>
         </section>
     );

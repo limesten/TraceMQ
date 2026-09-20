@@ -27,6 +27,15 @@ export function mergeRows(existing: MessageRow[], incoming: MessageRow[], cap = 
     return [...fresh, ...existing].slice(0, cap);
 }
 
+/**
+ * Delta is measured against the row below, which is the previous message in time. Rows are
+ * newest-first, so the last row on screen has nothing to compare against.
+ */
+export function deltaFor(rows: MessageRow[], index: number): number | null {
+    const below = rows[index + 1];
+    return below ? rows[index].ts - below.ts : null;
+}
+
 export interface LiveTail {
     rows: MessageRow[];
     pending: MessageRow[];
@@ -52,8 +61,6 @@ export function useLiveTail(): LiveTail {
     const [error, setError] = useState<string | null>(null);
 
     const cursor = useRef(0);
-    const autoScrollRef = useRef(autoScroll);
-    autoScrollRef.current = autoScroll;
 
     // First page, and a full reload whenever the filter changes.
     useEffect(() => {
@@ -87,7 +94,8 @@ export function useLiveTail(): LiveTail {
         };
     }, [topicFilter, correlation]);
 
-    // Incremental poll.
+    // Incremental poll. autoScroll is a dependency rather than a ref read during render:
+    // toggling it restarts the interval, which costs one skipped tick and nothing else.
     useEffect(() => {
         if (correlation || paused || state !== 'ready') return;
 
@@ -103,7 +111,7 @@ export function useLiveTail(): LiveTail {
                 cursor.current = Math.max(cursor.current, page[0].id);
                 // Auto scroll off means the view is being read: hold new rows aside rather
                 // than moving what is under the pointer.
-                const target = autoScrollRef.current ? setRows : setPending;
+                const target = autoScroll ? setRows : setPending;
                 target((prev) => mergeRows(prev, page));
             } catch {
                 // A dropped poll is not worth surfacing; the next one is a second away.
@@ -111,7 +119,7 @@ export function useLiveTail(): LiveTail {
         }, POLL_MS);
 
         return () => clearInterval(timer);
-    }, [correlation, paused, state, topicFilter]);
+    }, [correlation, paused, state, topicFilter, autoScroll]);
 
     const flush = useCallback(() => {
         setPending((held) => {

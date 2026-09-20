@@ -40,13 +40,90 @@ function Cog() {
     );
 }
 
+/**
+ * The correlation path editor. It exists as its own component so that opening the panel
+ * mounts it fresh: the draft initialises from the server's paths in a useState initialiser,
+ * and closing unmounts it, which is what Cancel means. Syncing props into state from an
+ * effect instead would start a second render every time the panel opened, and leave the
+ * draft alive after it closed.
+ */
+export function PathEditor({ initial, onDone }: { initial: string[]; onDone: () => void }) {
+    const queryClient = useQueryClient();
+    const [draft, setDraft] = useState(() => initial.join('\n'));
+
+    const save = useMutation({
+        mutationFn: (paths: string[]) => api.saveSettings(paths),
+        onSuccess: async () => {
+            // The key changed on every stored message, so nothing cached still holds.
+            await queryClient.invalidateQueries();
+            onDone();
+        },
+    });
+
+    return (
+        <div className="flex flex-col gap-2 rounded-lg border border-control bg-hover p-3">
+            <label htmlFor="corrPaths" className="text-[11px] font-medium text-ink">
+                Correlation paths
+            </label>
+            <span className="text-[10.5px] leading-snug text-ink-dim">
+                One per line. The first that resolves wins.
+            </span>
+            <textarea
+                id="corrPaths"
+                rows={3}
+                spellCheck={false}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                disabled={save.isPending}
+                className="resize-none rounded border border-control bg-ground p-2 font-mono text-[11px] leading-relaxed text-ink disabled:opacity-50"
+            />
+            <span className="text-[10.5px] leading-snug text-ink-faint">
+                Saving rewrites the key on every stored message.
+            </span>
+            {save.isError && (
+                <span className="text-[10.5px] leading-snug text-warn">
+                    {(save.error as Error).message}
+                </span>
+            )}
+            <div className="flex gap-2">
+                <button
+                    type="button"
+                    className="h-7 grow rounded border border-control text-xs text-ink-dim hover:bg-hover disabled:opacity-50"
+                    onClick={onDone}
+                    disabled={save.isPending}
+                >
+                    Cancel
+                </button>
+                <button
+                    type="button"
+                    className="h-7 grow rounded border border-accent bg-accent-fill text-xs font-medium text-accent disabled:opacity-50"
+                    onClick={() => save.mutate(draft.split('\n'))}
+                    disabled={save.isPending}
+                >
+                    {save.isPending ? 'Rewriting…' : 'Save'}
+                </button>
+            </div>
+        </div>
+    );
+}
+
+/** A clock that advances on its own, for relative timestamps. */
+function useTicker(everyMs: number): number {
+    const [now, setNow] = useState(() => Date.now());
+
+    useEffect(() => {
+        const timer = setInterval(() => setNow(Date.now()), everyMs);
+        return () => clearInterval(timer);
+    }, [everyMs]);
+
+    return now;
+}
+
 const fieldClass =
     'h-8 w-full rounded-md border bg-ground px-2.5 font-mono text-xs text-ink placeholder:text-ink-faint';
 
 export function ControlsRail() {
     const view = useView();
-    const queryClient = useQueryClient();
-    const [draftPaths, setDraftPaths] = useState('');
 
     const { data: recent = [] } = useQuery({
         queryKey: ['recentKeys'],
@@ -56,23 +133,9 @@ export function ControlsRail() {
 
     const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
 
-    // Opening the editor takes a fresh copy of what the server has; Cancel just closes.
-    useEffect(() => {
-        if (view.settingsOpen && settings) {
-            setDraftPaths(settings.correlationPaths.join('\n'));
-        }
-    }, [view.settingsOpen, settings]);
-
-    const save = useMutation({
-        mutationFn: (paths: string[]) => api.saveSettings(paths),
-        onSuccess: async () => {
-            // The key changed on every stored message, so nothing cached still holds.
-            await queryClient.invalidateQueries();
-            view.toggleSettings();
-        },
-    });
-
-    const now = Date.now();
+    // Date.now() during render never updates, so "2 min ago" would stay "2 min ago" until
+    // the query happened to refetch. Tick it deliberately instead.
+    const now = useTicker(30_000);
 
     return (
         <aside className="flex w-[264px] shrink-0 flex-col gap-[18px] overflow-y-auto border-r border-hairline bg-panel px-4 py-[18px] scroll-thin">
@@ -144,50 +207,10 @@ export function ControlsRail() {
                 />
             </div>
 
-            {view.settingsOpen && (
-                <div className="flex flex-col gap-2 rounded-lg border border-control bg-hover p-3">
-                    <label htmlFor="corrPaths" className="text-[11px] font-medium text-ink">
-                        Correlation paths
-                    </label>
-                    <span className="text-[10.5px] leading-snug text-ink-dim">
-                        One per line. The first that resolves wins.
-                    </span>
-                    <textarea
-                        id="corrPaths"
-                        rows={3}
-                        spellCheck={false}
-                        value={draftPaths}
-                        onChange={(e) => setDraftPaths(e.target.value)}
-                        disabled={save.isPending}
-                        className="resize-none rounded border border-control bg-ground p-2 font-mono text-[11px] leading-relaxed text-ink disabled:opacity-50"
-                    />
-                    <span className="text-[10.5px] leading-snug text-ink-faint">
-                        Saving rewrites the key on every stored message.
-                    </span>
-                    {save.isError && (
-                        <span className="text-[10.5px] leading-snug text-warn">
-                            {(save.error as Error).message}
-                        </span>
-                    )}
-                    <div className="flex gap-2">
-                        <button
-                            type="button"
-                            className="h-7 grow rounded border border-control text-xs text-ink-dim hover:bg-hover disabled:opacity-50"
-                            onClick={view.toggleSettings}
-                            disabled={save.isPending}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            className="h-7 grow rounded border border-accent bg-accent-fill text-xs font-medium text-accent disabled:opacity-50"
-                            onClick={() => save.mutate(draftPaths.split('\n'))}
-                            disabled={save.isPending}
-                        >
-                            {save.isPending ? 'Rewriting…' : 'Save'}
-                        </button>
-                    </div>
-                </div>
+            {/* Mounted only while open, and only once the server's paths are known, so it
+                initialises from them without an effect syncing props into state. */}
+            {view.settingsOpen && settings && (
+                <PathEditor initial={settings.correlationPaths} onDone={view.toggleSettings} />
             )}
 
             <span className="grow" />

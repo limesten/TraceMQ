@@ -2,16 +2,10 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef } from 'react';
 import type { MessageRow } from '../api';
 import { formatDelta, formatTime, groupDigits, splitTopic } from '../format';
-import { useLiveTail } from '../liveTail';
+import { deltaFor, useLiveTail } from '../liveTail';
 import { useView } from '../store';
 
 const ROW_HEIGHT = 30;
-
-/** Delta is measured against the row below, which is the previous message in time. */
-export function deltaFor(rows: MessageRow[], index: number): number | null {
-    const below = rows[index + 1];
-    return below ? rows[index].ts - below.ts : null;
-}
 
 function Row({ row, delta, selected, onSelect }: {
     row: MessageRow;
