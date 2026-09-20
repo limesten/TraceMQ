@@ -15,8 +15,6 @@ public sealed class RetentionService(
 {
     public const int ChunkSize = 10_000;
 
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(10);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var retentionDays = options.Value.RetentionDays;
@@ -26,7 +24,11 @@ public sealed class RetentionService(
             return;
         }
 
-        using var timer = new PeriodicTimer(Interval);
+        var interval = TimeSpan.FromMinutes(Math.Max(options.Value.RetentionSweepMinutes, 0.0001));
+        log.LogInformation("Retention sweeping every {Interval} for messages older than {Days} days",
+            interval, retentionDays);
+
+        using var timer = new PeriodicTimer(interval);
         do
         {
             try
@@ -40,6 +42,12 @@ public sealed class RetentionService(
                 {
                     log.LogInformation("Retention removed {Count} messages older than {Days} days",
                         removed, retentionDays);
+                }
+                else
+                {
+                    // Otherwise there is no way to tell "nothing was old enough" from
+                    // "retention never ran", which is the first question at a customer.
+                    log.LogDebug("Retention swept, nothing older than {Days} days", retentionDays);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

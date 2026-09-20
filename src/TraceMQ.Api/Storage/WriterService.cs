@@ -18,6 +18,13 @@ public sealed class WriterService : BackgroundService
     private readonly int _batchSize;
     private readonly TimeSpan _flushInterval;
 
+    // Kept across iterations. Abandoning a fresh pair of awaiters every time queues a waiter
+    // on each channel that lingers until something wakes it, which accumulates whenever one
+    // side is busy and the other is quiet.
+    private Task<bool>? _messagesReady;
+    private Task<bool>? _queueReady;
+    private bool _messagesDone;
+
     public WriterService(
         Channel<LogMessage> channel,
         SqliteConnectionFactory factory,
@@ -86,21 +93,7 @@ public sealed class WriterService : BackgroundService
     /// </summary>
     private async Task<bool> WaitForWorkAsync(List<LogMessage> batch, CancellationToken ct)
     {
-        try
-        {
-            var messages = _reader.WaitToReadAsync(ct).AsTask();
-            var queued = _queue.Reader.WaitToReadAsync(ct).AsTask();
-            var first = await Task.WhenAny(messages, queued);
-
-            if (first == messages && !await messages && _queue.Reader.Completion.IsCompleted)
-            {
-                return false;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
-        }
+        if (!await WaitForSignalAsync(ct)) return false;
 
         if (!_reader.TryPeek(out _)) return true;
 
@@ -135,6 +128,47 @@ public sealed class WriterService : BackgroundService
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Block until there is something to do, or cancellation.
+    ///
+    /// Once ingest has completed the message channel, its awaiter completes synchronously
+    /// with false every time it is asked. Re-awaiting it in a loop is a spin that pegs a
+    /// core with nothing in the log, so from that point the wait is on the queue alone.
+    /// </summary>
+    private async Task<bool> WaitForSignalAsync(CancellationToken ct)
+    {
+        try
+        {
+            if (_messagesDone)
+            {
+                return await _queue.Reader.WaitToReadAsync(ct);
+            }
+
+            _messagesReady ??= _reader.WaitToReadAsync(ct).AsTask();
+            _queueReady ??= _queue.Reader.WaitToReadAsync(ct).AsTask();
+
+            var first = await Task.WhenAny(_messagesReady, _queueReady);
+
+            if (ReferenceEquals(first, _queueReady))
+            {
+                _queueReady = null;
+                return true;
+            }
+
+            _messagesReady = null;
+            if (!await first)
+            {
+                _messagesDone = true;
+                _log.LogInformation("Ingest closed the message channel; serving queued writes only");
+            }
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
     }
 
     private static async Task FlushAsync(SqliteConnection connection, List<LogMessage> batch, CancellationToken ct)

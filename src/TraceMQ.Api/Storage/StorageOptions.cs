@@ -18,6 +18,12 @@ public sealed class StorageOptions
     /// <summary>Commit after this long even if the batch is not full.</summary>
     public int FlushIntervalMs { get; set; } = 100;
 
+    /// <summary>
+    /// How often retention sweeps. Minutes, fractional allowed so a test can drive the loop
+    /// without waiting for the real interval — which is why the loop had no coverage before.
+    /// </summary>
+    public double RetentionSweepMinutes { get; set; } = 10;
+
     /// <summary>How many messages the live pane's in-memory ring holds.</summary>
     public int RingCapacity { get; set; } = 100_000;
 

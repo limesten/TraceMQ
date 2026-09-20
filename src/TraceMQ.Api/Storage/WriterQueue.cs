@@ -56,5 +56,8 @@ public sealed class WriterQueue
             return true;
         });
 
-    public void Complete() => _work.Writer.TryComplete();
+    // Deliberately no Complete(): the queue has several producers (retention, the settings
+    // endpoint) and no single owner to close it. The writer's exit signal is its stopping
+    // token, and an earlier guard that tested Reader.Completion here was dead code that made
+    // the spin below it look handled.
 }
