@@ -76,7 +76,7 @@ export function MessageTable() {
     const items = virtualizer.getVirtualItems();
 
     return (
-        <section className="flex min-w-[260px] grow flex-col border-r border-hairline">
+        <section className="flex min-w-[300px] grow flex-col">
             <div className="flex h-[34px] shrink-0 items-center gap-3 border-b border-hairline bg-panel px-3.5 text-[10.5px] tracking-wider text-ink-faint uppercase">
                 <span className="w-[92px] shrink-0">Time</span>
                 <span className="w-[58px] shrink-0 text-right">Delta</span>

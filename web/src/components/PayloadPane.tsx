@@ -85,7 +85,7 @@ function Body({ message }: { message: MessageDetail }) {
     );
 }
 
-export function PayloadPane() {
+export function PayloadPane({ width }: { width: number }) {
     const selectedId = useView((s) => s.selectedId);
 
     const { data: message, isLoading } = useQuery({
@@ -95,18 +95,18 @@ export function PayloadPane() {
         staleTime: Infinity,
     });
 
-    const paneClass = 'flex w-[42%] min-w-[340px] max-w-[760px] shrink-0 flex-col bg-ground';
+    const paneClass = 'flex shrink-0 flex-col bg-ground';
 
     if (selectedId === null) {
         return (
-            <section className={`${paneClass} items-center justify-center`}>
+            <section className={`${paneClass} items-center justify-center`} style={{ width }}>
                 <p className="text-xs text-ink-faint">Select a message to see its payload.</p>
             </section>
         );
     }
 
     return (
-        <section className={paneClass}>
+        <section className={paneClass} style={{ width }}>
             <div className="flex shrink-0 flex-col gap-1.5 border-b border-hairline bg-panel px-[18px] py-3">
                 <div className="flex items-center gap-2.5">
                     <span className="font-mono text-xs text-ink">
