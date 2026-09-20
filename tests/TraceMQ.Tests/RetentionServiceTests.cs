@@ -101,9 +101,15 @@ public class RetentionLoopTests
         private readonly WriterService _writer;
         private readonly RetentionService _retention;
 
-        public Harness(double sweepMinutes, int retentionDays = 1)
+        /// <param name="seed">
+        /// Runs before the services start. The startup sweep races anything inserted after
+        /// StartAsync: it can run first, find nothing, and leave the row for a tick that is
+        /// an hour away.
+        /// </param>
+        public Harness(double sweepMinutes, int retentionDays = 1, Action<Harness>? seed = null)
         {
             Schema.Initialize(Db.Factory, NullLogger.Instance);
+            seed?.Invoke(this);
             var queue = new WriterQueue();
             var options = Options.Create(new StorageOptions
             {
@@ -163,10 +169,10 @@ public class RetentionLoopTests
     [Fact]
     public async Task SweepsOnStartupWithoutWaitingForTheFirstTick()
     {
-        using var h = new Harness(sweepMinutes: 60);
-        h.InsertOld(1);
+        // Seeded before the services start, so the startup sweep cannot miss it. A
+        // sixty-minute interval means that if this only ran on a tick, it would not run.
+        using var h = new Harness(sweepMinutes: 60, seed: harness => harness.InsertOld(1));
 
-        // A sixty-minute interval: if this only ran on a tick, it would not run at all.
         Assert.True(await h.WaitUntilEmpty(TimeSpan.FromSeconds(10)), "the startup sweep did not run");
 
         await h.StopAsync();
@@ -177,8 +183,7 @@ public class RetentionLoopTests
     {
         // The part the sweep tests could never cover: that the loop goes round again. The
         // first sweep happens before the first tick, so only the second proves the loop.
-        using var h = new Harness(sweepMinutes: 0.001);
-        h.InsertOld(1);
+        using var h = new Harness(sweepMinutes: 0.001, seed: harness => harness.InsertOld(1));
         Assert.True(await h.WaitUntilEmpty(TimeSpan.FromSeconds(10)), "the first sweep did not run");
 
         h.InsertOld(2);
