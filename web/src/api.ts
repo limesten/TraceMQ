@@ -60,10 +60,29 @@ export interface MessageQuery {
     limit?: number;
 }
 
+async function put<T>(path: string, body: unknown): Promise<T> {
+    const response = await fetch(path, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+    const payload = (await response.json()) as T & { error?: string };
+    if (!response.ok) {
+        throw new Error(payload.error ?? `${path} responded ${response.status}`);
+    }
+    return payload;
+}
+
+export interface SettingsUpdate extends Settings {
+    rewritten: number;
+}
+
 export const api = {
     messages: (query: MessageQuery) => get<MessageRow[]>('/api/messages', { ...query }),
     message: (id: number) => get<MessageDetail>(`/api/messages/${id}`),
     recentKeys: () => get<RecentKey[]>('/api/correlations/recent'),
     status: () => get<Status>('/api/status'),
     settings: () => get<Settings>('/api/settings'),
+    saveSettings: (correlationPaths: string[]) =>
+        put<SettingsUpdate>('/api/settings', { correlationPaths }),
 };

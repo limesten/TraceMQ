@@ -13,7 +13,7 @@ public sealed class MqttIngestService : BackgroundService
 {
     private readonly ChannelWriter<LogMessage> _writer;
     private readonly MqttOptions _options;
-    private readonly CorrelationExtractor _correlation;
+    private readonly CorrelationSettings _correlation;
     private readonly MessageRing _ring;
     private readonly RecentKeys _recentKeys;
     private readonly BrokerState _brokerState;
@@ -22,7 +22,7 @@ public sealed class MqttIngestService : BackgroundService
     public MqttIngestService(
         Channel<LogMessage> channel,
         IOptions<MqttOptions> options,
-        CorrelationExtractor correlation,
+        CorrelationSettings correlation,
         MessageRing ring,
         RecentKeys recentKeys,
         BrokerState brokerState,
@@ -61,7 +61,7 @@ public sealed class MqttIngestService : BackgroundService
                 bytes,
                 (byte)e.ApplicationMessage.QualityOfServiceLevel,
                 e.ApplicationMessage.Retain,
-                _correlation.Extract(bytes));
+                _correlation.Extractor.Extract(bytes));
 
             // The ring first: the live pane must see the message even if the writer is behind
             // or the channel drops it.

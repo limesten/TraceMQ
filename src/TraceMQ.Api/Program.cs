@@ -40,10 +40,11 @@ builder.Services.AddSingleton<BrokerState>();
 builder.Services.AddSingleton(_ => new MessageRing(100_000));
 builder.Services.AddSingleton(_ => new RecentKeys(20));
 
-builder.Services.AddSingleton(sp => CorrelationPaths.Load(
+builder.Services.AddSingleton(sp => new CorrelationSettings(CorrelationPaths.Load(
     sp.GetRequiredService<SqliteConnectionFactory>(),
     sp.GetRequiredService<IConfiguration>(),
-    sp.GetRequiredService<ILoggerFactory>().CreateLogger("Correlation")));
+    sp.GetRequiredService<ILoggerFactory>().CreateLogger("Correlation"))));
+builder.Services.AddSingleton<CorrelationPathUpdater>();
 
 builder.Services.AddHostedService<MqttIngestService>();
 builder.Services.AddHostedService<WriterService>();

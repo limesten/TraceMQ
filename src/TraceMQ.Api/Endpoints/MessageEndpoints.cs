@@ -5,6 +5,8 @@ using TraceMQ.Api.Storage;
 
 namespace TraceMQ.Api.Endpoints;
 
+public sealed record SettingsRequest(string[]? CorrelationPaths);
+
 public static class MessageEndpoints
 {
     public static void MapMessageEndpoints(this WebApplication app)
@@ -25,8 +27,23 @@ public static class MessageEndpoints
 
         app.MapGet("/api/correlations/recent", (RecentKeys keys) => Results.Ok(keys.Snapshot()));
 
-        app.MapGet("/api/settings", (CorrelationExtractor extractor) =>
-            Results.Ok(new { CorrelationPaths = extractor.Paths }));
+        app.MapGet("/api/settings", (CorrelationSettings settings) =>
+            Results.Ok(new { CorrelationPaths = settings.Paths }));
+
+        // The only write in the API. It runs on the writer connection and rewrites the
+        // correlation key across the whole table, so it is slow by nature and rare by design.
+        app.MapPut("/api/settings", async (CorrelationPathUpdater updater, SettingsRequest request) =>
+        {
+            try
+            {
+                var update = await updater.UpdateAsync(request.CorrelationPaths);
+                return Results.Ok(new { CorrelationPaths = update.Paths, update.Rewritten });
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { Error = ex.Message });
+            }
+        });
 
         app.MapGet("/api/status", (
             SqliteConnectionFactory factory,

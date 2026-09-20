@@ -56,6 +56,12 @@ public sealed class RecentKeys
         }
     }
 
+    /// <summary>Forget everything: the keys were extracted under paths that no longer apply.</summary>
+    public void Clear()
+    {
+        lock (_gate) _keys.Clear();
+    }
+
     /// <summary>Most recently seen first, which is the order the rail lists them.</summary>
     public IReadOnlyList<RecentKey> Snapshot()
     {

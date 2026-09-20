@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { formatDelta } from '../format';
 import { useView } from '../store';
@@ -44,6 +45,8 @@ const fieldClass =
 
 export function ControlsRail() {
     const view = useView();
+    const queryClient = useQueryClient();
+    const [draftPaths, setDraftPaths] = useState('');
 
     const { data: recent = [] } = useQuery({
         queryKey: ['recentKeys'],
@@ -52,6 +55,22 @@ export function ControlsRail() {
     });
 
     const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+
+    // Opening the editor takes a fresh copy of what the server has; Cancel just closes.
+    useEffect(() => {
+        if (view.settingsOpen && settings) {
+            setDraftPaths(settings.correlationPaths.join('\n'));
+        }
+    }, [view.settingsOpen, settings]);
+
+    const save = useMutation({
+        mutationFn: (paths: string[]) => api.saveSettings(paths),
+        onSuccess: async () => {
+            // The key changed on every stored message, so nothing cached still holds.
+            await queryClient.invalidateQueries();
+            view.toggleSettings();
+        },
+    });
 
     const now = Date.now();
 
@@ -137,14 +156,37 @@ export function ControlsRail() {
                         id="corrPaths"
                         rows={3}
                         spellCheck={false}
-                        readOnly
-                        defaultValue={(settings?.correlationPaths ?? []).join('\n')}
-                        className="resize-none rounded border border-control bg-ground p-2 font-mono text-[11px] leading-relaxed text-ink"
+                        value={draftPaths}
+                        onChange={(e) => setDraftPaths(e.target.value)}
+                        disabled={save.isPending}
+                        className="resize-none rounded border border-control bg-ground p-2 font-mono text-[11px] leading-relaxed text-ink disabled:opacity-50"
                     />
                     <span className="text-[10.5px] leading-snug text-ink-faint">
-                        Editing lands with the PUT endpoint; saving rewrites the key on every
-                        stored message.
+                        Saving rewrites the key on every stored message.
                     </span>
+                    {save.isError && (
+                        <span className="text-[10.5px] leading-snug text-warn">
+                            {(save.error as Error).message}
+                        </span>
+                    )}
+                    <div className="flex gap-2">
+                        <button
+                            type="button"
+                            className="h-7 grow rounded border border-control text-xs text-ink-dim hover:bg-hover disabled:opacity-50"
+                            onClick={view.toggleSettings}
+                            disabled={save.isPending}
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            className="h-7 grow rounded border border-accent bg-accent-fill text-xs font-medium text-accent disabled:opacity-50"
+                            onClick={() => save.mutate(draftPaths.split('\n'))}
+                            disabled={save.isPending}
+                        >
+                            {save.isPending ? 'Rewriting…' : 'Save'}
+                        </button>
+                    </div>
                 </div>
             )}
 
