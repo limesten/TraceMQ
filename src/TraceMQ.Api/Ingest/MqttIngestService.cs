@@ -79,7 +79,7 @@ public sealed class MqttIngestService : BackgroundService
                     await client.ConnectAsync(clientOptions, stoppingToken);
                     _log.LogInformation("Connected to {Host}:{Port}", _options.Host, _options.Port);
 
-                    foreach (var topic in _options.Topics)
+                    foreach (var topic in _options.EffectiveTopics())
                     {
                         await client.SubscribeAsync(
                             new MqttTopicFilterBuilder()

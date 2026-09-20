@@ -17,6 +17,7 @@ builder.Host.UseWindowsService();
 builder.Services.Configure<MqttOptions>(builder.Configuration.GetSection("Mqtt"));
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
 builder.Services.AddSingleton<SqliteConnectionFactory>();
+builder.Services.AddSingleton<MessageQuery>();
 
 var dropped = new DroppedCounter();
 builder.Services.AddSingleton(dropped);

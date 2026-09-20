@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using TraceMQ.Api.Correlation;
 using TraceMQ.Api.Storage;
 
 namespace TraceMQ.Api.Endpoints;
@@ -6,40 +8,41 @@ public static class MessageEndpoints
 {
     public static void MapMessageEndpoints(this WebApplication app)
     {
-        // Phase 3 replaces this with the full surface in PLAN.md section 5. For now it is
-        // the smallest thing that keeps the dev loop working against the v1 schema.
-        app.MapGet("/api/messages", async (SqliteConnectionFactory factory, int limit = 50) =>
+        // Rows only. The payload rides on /api/messages/{id}, on click: the UI shows one at a
+        // time, and at 1500 msg/s the difference is a 40 KB poll against a 4 MB one.
+        app.MapGet("/api/messages", (
+            MessageQuery query,
+            long? afterId, long? beforeId, string? topic, string? correlation,
+            long? from, long? to, int limit = 200) =>
         {
-            await using var connection = await factory.OpenAsync();
-            await using var cmd = connection.CreateCommand();
-            cmd.CommandText = """
-                SELECT id, ts, topic, correlation_key, qos, retained, length(payload)
-                FROM messages
-                ORDER BY id DESC
-                LIMIT $limit;
-                """;
-            cmd.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 1000));
-
-            var messages = new List<object>();
-            await using var reader = await cmd.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-            {
-                messages.Add(new
-                {
-                    Id = reader.GetInt64(0),
-                    Ts = reader.GetInt64(1),
-                    Topic = reader.GetString(2),
-                    CorrelationKey = reader.IsDBNull(3) ? null : reader.GetString(3),
-                    Qos = reader.IsDBNull(4) ? (long?)null : reader.GetInt64(4),
-                    Retained = reader.IsDBNull(5) ? (long?)null : reader.GetInt64(5),
-                    Size = reader.IsDBNull(6) ? 0 : reader.GetInt64(6),
-                });
-            }
-
-            return Results.Ok(messages);
+            var rows = query.List(new MessageFilter(afterId, beforeId, topic, correlation, from, to, limit));
+            return Results.Ok(rows);
         });
 
-        app.MapGet("/api/status", (SqliteConnectionFactory factory, DroppedCounter dropped) =>
-            Results.Ok(new { Dropped = dropped.Count, DbPath = factory.DbPath }));
+        app.MapGet("/api/messages/{id:long}", (MessageQuery query, long id) =>
+            query.Get(id) is { } detail ? Results.Ok(detail) : Results.NotFound());
+
+        app.MapGet("/api/correlations/recent", (RecentKeys keys) => Results.Ok(keys.Snapshot()));
+
+        app.MapGet("/api/settings", (CorrelationExtractor extractor) =>
+            Results.Ok(new { CorrelationPaths = extractor.Paths }));
+
+        app.MapGet("/api/status", (
+            SqliteConnectionFactory factory,
+            DroppedCounter dropped,
+            MessageRing ring,
+            IOptions<StorageOptions> storage) =>
+        {
+            var file = new FileInfo(factory.DbPath);
+            return Results.Ok(new
+            {
+                Dropped = dropped.Count,
+                HighWaterId = ring.HighWater,
+                RingCapacity = ring.Capacity,
+                DbPath = factory.DbPath,
+                DbBytes = file.Exists ? file.Length : 0,
+                storage.Value.RetentionDays,
+            });
+        });
     }
 }
