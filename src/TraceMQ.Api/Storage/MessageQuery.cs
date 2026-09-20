@@ -30,11 +30,19 @@ public sealed class MessageQuery(SqliteConnectionFactory factory, MessageRing ri
     public const int MaxLimit = 2_000;
 
     /// <summary>
-    /// The ring answers a plain live tail: no correlation search, no time range, no paging
-    /// backwards, and a cursor still inside the window it holds.
+    /// The ring answers an incremental live tail and nothing else: no correlation search, no
+    /// time range, no paging backwards, and a cursor still inside the window it holds.
+    ///
+    /// A request with no cursor goes to the database even though the ring holds the newest
+    /// messages. The ring can be shorter than the page asked for — it is empty right after a
+    /// restart, and holds only what has arrived since — so serving the first page from it
+    /// would silently drop the older rows that complete that page. The first page is one
+    /// query; the poll that repeats every second afterwards is the one that has to be cheap,
+    /// and that one always carries a cursor.
     /// </summary>
     public bool CanUseRing(MessageFilter filter)
     {
+        if (filter.AfterId is not { } afterId) return false;
         if (filter.Correlation is { Length: > 0 }) return false;
         if (filter.BeforeId is not null || filter.From is not null || filter.To is not null) return false;
 
@@ -42,8 +50,7 @@ public sealed class MessageQuery(SqliteConnectionFactory factory, MessageRing ri
         if (high == 0) return false;
 
         var oldestHeld = Math.Max(1, high - ring.Capacity + 1);
-        // No cursor means "the newest page", which the ring always has.
-        return filter.AfterId is null || filter.AfterId.Value + 1 >= oldestHeld;
+        return afterId + 1 >= oldestHeld;
     }
 
     public IReadOnlyList<MessageRow> List(MessageFilter filter)
@@ -53,9 +60,7 @@ public sealed class MessageQuery(SqliteConnectionFactory factory, MessageRing ri
         if (CanUseRing(filter))
         {
             var predicate = TopicPredicate(filter.Topic);
-            var found = filter.AfterId is null
-                ? ring.Latest(limit, predicate)
-                : ring.After(filter.AfterId.Value, limit, predicate);
+            var found = ring.After(filter.AfterId!.Value, limit, predicate);
 
             // Newest first, which is the order the table displays.
             return found

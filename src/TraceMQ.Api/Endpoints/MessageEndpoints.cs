@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using TraceMQ.Api.Ingest;
 using TraceMQ.Api.Correlation;
 using TraceMQ.Api.Storage;
 
@@ -31,11 +32,13 @@ public static class MessageEndpoints
             SqliteConnectionFactory factory,
             DroppedCounter dropped,
             MessageRing ring,
+            BrokerState broker,
             IOptions<StorageOptions> storage) =>
         {
             var file = new FileInfo(factory.DbPath);
             return Results.Ok(new
             {
+                Broker = new { broker.Connected, broker.Endpoint, broker.Topics },
                 Dropped = dropped.Count,
                 HighWaterId = ring.HighWater,
                 RingCapacity = ring.Capacity,

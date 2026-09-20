@@ -16,6 +16,7 @@ public sealed class MqttIngestService : BackgroundService
     private readonly CorrelationExtractor _correlation;
     private readonly MessageRing _ring;
     private readonly RecentKeys _recentKeys;
+    private readonly BrokerState _brokerState;
     private readonly ILogger<MqttIngestService> _log;
 
     public MqttIngestService(
@@ -24,6 +25,7 @@ public sealed class MqttIngestService : BackgroundService
         CorrelationExtractor correlation,
         MessageRing ring,
         RecentKeys recentKeys,
+        BrokerState brokerState,
         ILogger<MqttIngestService> log
     )
     {
@@ -32,12 +34,20 @@ public sealed class MqttIngestService : BackgroundService
         _correlation = correlation;
         _ring = ring;
         _recentKeys = recentKeys;
+        _brokerState = brokerState;
         _log = log;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var client = new MqttClientFactory().CreateMqttClient();
+        var topics = _options.EffectiveTopics();
+        _brokerState.Describe($"mqtt://{_options.Host}:{_options.Port}", topics);
+        client.DisconnectedAsync += _ =>
+        {
+            _brokerState.SetConnected(false);
+            return Task.CompletedTask;
+        };
 
         client.ApplicationMessageReceivedAsync += e =>
         {
@@ -77,9 +87,10 @@ public sealed class MqttIngestService : BackgroundService
                 if (!client.IsConnected)
                 {
                     await client.ConnectAsync(clientOptions, stoppingToken);
+                    _brokerState.SetConnected(true);
                     _log.LogInformation("Connected to {Host}:{Port}", _options.Host, _options.Port);
 
-                    foreach (var topic in _options.EffectiveTopics())
+                    foreach (var topic in topics)
                     {
                         await client.SubscribeAsync(
                             new MqttTopicFilterBuilder()
@@ -100,12 +111,14 @@ public sealed class MqttIngestService : BackgroundService
             }
             catch (Exception ex)
             {
+                _brokerState.SetConnected(false);
                 _log.LogWarning(ex, "MQTT connection failed; retrying in 5s");
                 try { await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken); }
                 catch (OperationCanceledException) { break; }
             }
         }
 
+        _brokerState.SetConnected(false);
         if (client.IsConnected)
         {
             await client.DisconnectAsync(new MqttClientDisconnectOptions(), CancellationToken.None);

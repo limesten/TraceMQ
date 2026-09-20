@@ -35,6 +35,21 @@ public class MessageRingTests
     }
 
     [Fact]
+    public void SeedingDoesNotClaimToHoldMessagesItDoesNotHave()
+    {
+        // The regression: seeding used to move the high water mark as well, so straight after
+        // a restart the ring reported ids it had never seen and served an empty page for
+        // them, and the table came up blank against a database full of messages.
+        var ring = new MessageRing(16);
+
+        ring.SeedFrom(4_000);
+
+        Assert.Equal(0, ring.HighWater);
+        Assert.Empty(ring.After(afterId: 0, limit: 10));
+        Assert.Empty(ring.Latest(limit: 10));
+    }
+
+    [Fact]
     public void AfterReturnsOnlyWhatIsNewerOldestFirst()
     {
         var ring = new MessageRing(64);

@@ -35,6 +35,7 @@ builder.Services.AddSingleton(_ => Channel.CreateBounded<LogMessage>(
     itemDropped: _ => dropped.Increment()
 ));
 
+builder.Services.AddSingleton<BrokerState>();
 builder.Services.AddSingleton(_ => new MessageRing(100_000));
 builder.Services.AddSingleton(_ => new RecentKeys(20));
 

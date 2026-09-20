@@ -25,17 +25,22 @@ public sealed class MessageRing
 
     public int Capacity { get; }
 
-    /// <summary>The highest id handed out so far; 0 before anything has arrived.</summary>
+    /// <summary>
+    /// The highest id actually held in the ring; 0 while it is empty. Deliberately NOT the
+    /// highest id handed out: after a restart the counter continues from the database, but
+    /// the ring itself holds nothing, and a reader that trusted the counter would ask for
+    /// messages that are only on disk and get an empty page.
+    /// </summary>
     public long HighWater => Interlocked.Read(ref _highWater);
 
     /// <summary>
     /// Continue numbering from what is already on disk. Called once at startup, before
     /// ingest connects: without it a restart reissues ids that the database already holds.
+    /// This moves the id counter only — the ring is still empty until messages arrive.
     /// </summary>
     public void SeedFrom(long lastPersistedId)
     {
         Interlocked.Exchange(ref _nextId, lastPersistedId);
-        Interlocked.Exchange(ref _highWater, lastPersistedId);
     }
 
     /// <summary>

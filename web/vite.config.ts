@@ -1,9 +1,9 @@
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 
-// https://vite.dev/config/
 export default defineConfig({
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
     build: {
         outDir: '../src/TraceMQ.Api/wwwroot',
         emptyOutDir: true,
@@ -11,5 +11,10 @@ export default defineConfig({
     server: {
         port: 5173,
         proxy: { '/api': 'http://localhost:5027' },
+    },
+    test: {
+        environment: 'jsdom',
+        globals: true,
+        include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     },
 });

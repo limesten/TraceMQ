@@ -120,15 +120,15 @@ public class MessageQueryTests
             Insert(db, i, new[] { "codeit/a/scanner", "codeit/b/scanner", "codeit/a/b/scanner", "other/x" }[i - 1]);
         }
 
-        var fromRing = query.List(new MessageFilter(Topic: "codeit/+/scanner"));
-        var fromDb = query.List(new MessageFilter(Topic: "codeit/+/scanner", BeforeId: 1000));
+        var fromRing = query.List(new MessageFilter(AfterId: 0, Topic: "codeit/+/scanner"));
+        var fromDb = query.List(new MessageFilter(AfterId: 0, Topic: "codeit/+/scanner", BeforeId: 1000));
 
-        Assert.True(query.CanUseRing(new MessageFilter(Topic: "codeit/+/scanner")));
+        Assert.True(query.CanUseRing(new MessageFilter(AfterId: 0, Topic: "codeit/+/scanner")));
         Assert.Equal(fromDb.Select(r => r.Id), fromRing.Select(r => r.Id));
     }
 
     [Theory]
-    [InlineData(null, null, null, true)]    // a plain live tail
+    [InlineData(null, null, null, false)]   // no cursor: the ring may be shorter than the page
     [InlineData(5L, null, null, true)]      // a cursor inside the window
     [InlineData(null, 5L, null, false)]     // paging backwards
     [InlineData(null, null, "key", false)]  // a correlation search
@@ -239,6 +239,6 @@ public class MessageQueryTests
         Assert.Equal(5, query.List(new MessageFilter(BeforeId: 1000, Limit: 5)).Count);
         Assert.Equal(20, query.List(new MessageFilter(BeforeId: 1000, Limit: 999)).Count);
         // A limit of zero or less is clamped up, never treated as "no limit".
-        Assert.Equal(1, query.List(new MessageFilter(BeforeId: 1000, Limit: 0)).Count);
+        Assert.Single(query.List(new MessageFilter(BeforeId: 1000, Limit: 0)));
     }
 }
