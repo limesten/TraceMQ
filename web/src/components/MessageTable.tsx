@@ -1,7 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
-import { api, type MessageRow } from '../api';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useEffect, useRef } from 'react';
+import type { MessageRow } from '../api';
 import { formatDelta, formatTime, groupDigits, splitTopic } from '../format';
+import { useLiveTail } from '../liveTail';
 import { useView } from '../store';
+
+const ROW_HEIGHT = 30;
 
 /** Delta is measured against the row below, which is the previous message in time. */
 export function deltaFor(rows: MessageRow[], index: number): number | null {
@@ -16,22 +20,19 @@ function Row({ row, delta, selected, onSelect }: {
     onSelect: () => void;
 }) {
     const { head, tail } = splitTopic(row.topic);
-    // A gap of a minute or more inside a sequence is the thing being hunted.
+    // A gap of a minute or more is the thing being hunted.
     const slow = delta !== null && delta >= 60_000;
 
     return (
         <button
             type="button"
             onClick={onSelect}
-            className={`flex h-[30px] w-full items-center gap-3 border-l-2 pr-3.5 pl-3 text-left ${
+            style={{ height: ROW_HEIGHT }}
+            className={`flex w-full items-center gap-3 border-l-2 pr-3.5 pl-3 text-left ${
                 selected ? 'border-l-accent bg-selected' : 'border-l-transparent hover:bg-hover'
             }`}
         >
-            <span
-                className={`w-[92px] shrink-0 font-mono text-[11.5px] ${
-                    selected ? 'text-ink' : 'text-ink-dim'
-                }`}
-            >
+            <span className={`w-[92px] shrink-0 font-mono text-[11.5px] ${selected ? 'text-ink' : 'text-ink-dim'}`}>
                 {formatTime(row.ts)}
             </span>
             <span
@@ -50,18 +51,35 @@ function Row({ row, delta, selected, onSelect }: {
 }
 
 export function MessageTable() {
-    const view = useView();
+    const { selectedId, select, autoScroll, toggleAutoScroll, correlationSearch } = useView();
+    const { rows, pending, flush, state, error } = useLiveTail();
 
-    const { data: rows = [], isLoading, error } = useQuery({
-        queryKey: ['messages', view.topicFilter, view.correlationSearch],
-        queryFn: () =>
-            api.messages({
-                topic: view.topicFilter || undefined,
-                correlation: view.correlationSearch.trim() || undefined,
-                limit: 500,
-            }),
-        refetchInterval: view.paused || view.correlationSearch ? false : 1000,
+    const scrollRef = useRef<HTMLDivElement>(null);
+
+    const virtualizer = useVirtualizer({
+        count: rows.length,
+        getScrollElement: () => scrollRef.current,
+        estimateSize: () => ROW_HEIGHT,
+        overscan: 12,
     });
+
+    // Auto scroll means pinned at offset 0. Rows only prepend while it is on, so holding the
+    // top is enough — there is no scroll offset to compensate, which is the whole reason for
+    // the pending buffer.
+    useEffect(() => {
+        if (autoScroll && scrollRef.current) {
+            scrollRef.current.scrollTop = 0;
+        }
+    }, [autoScroll, rows]);
+
+    // Scrolling away from the top disengages auto scroll; returning to it re-engages.
+    const onScroll = () => {
+        const top = scrollRef.current?.scrollTop ?? 0;
+        if (top > 4 && autoScroll) toggleAutoScroll();
+        else if (top === 0 && !autoScroll) toggleAutoScroll();
+    };
+
+    const items = virtualizer.getVirtualItems();
 
     return (
         <section className="flex min-w-[260px] grow flex-col border-r border-hairline">
@@ -71,27 +89,53 @@ export function MessageTable() {
                 <span className="grow">Topic</span>
             </div>
 
-            <div className="grow overflow-y-auto scroll-thin">
-                {isLoading && <p className="p-3.5 text-xs text-ink-faint">Loading…</p>}
-                {error && (
-                    <p className="p-3.5 font-mono text-xs text-warn">
-                        {(error as Error).message}
-                    </p>
-                )}
-                {!isLoading && !error && rows.length === 0 && (
+            {pending.length > 0 && (
+                <button
+                    type="button"
+                    // Showing what was held also resumes following. Clicking "show me the new
+                    // messages" and then immediately accumulating a fresh backlog reads as the
+                    // button not having worked.
+                    onClick={() => {
+                        flush();
+                        if (!autoScroll) toggleAutoScroll();
+                    }}
+                    className="h-7 shrink-0 border-b border-hairline bg-accent-fill text-[11.5px] font-medium text-accent hover:brightness-125"
+                >
+                    {groupDigits(pending.length)} new {pending.length === 1 ? 'message' : 'messages'}, click to show
+                </button>
+            )}
+
+            <div ref={scrollRef} onScroll={onScroll} className="grow overflow-y-auto scroll-thin">
+                {state === 'loading' && <p className="p-3.5 text-xs text-ink-faint">Loading…</p>}
+                {state === 'error' && <p className="p-3.5 font-mono text-xs text-warn">{error}</p>}
+                {state === 'ready' && rows.length === 0 && (
                     <p className="p-3.5 text-xs text-ink-faint">
-                        No messages match {view.correlationSearch ? 'that correlation key' : 'this filter'}.
+                        No messages match {correlationSearch ? 'that correlation key' : 'this filter'}.
                     </p>
                 )}
-                {rows.map((row, index) => (
-                    <Row
-                        key={row.id}
-                        row={row}
-                        delta={deltaFor(rows, index)}
-                        selected={view.selectedId === row.id}
-                        onSelect={() => view.select(row.id)}
-                    />
-                ))}
+                {rows.length > 0 && (
+                    <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+                        <div
+                            style={{
+                                position: 'absolute',
+                                top: 0,
+                                left: 0,
+                                width: '100%',
+                                transform: `translateY(${items[0]?.start ?? 0}px)`,
+                            }}
+                        >
+                            {items.map((item) => (
+                                <Row
+                                    key={rows[item.index].id}
+                                    row={rows[item.index]}
+                                    delta={deltaFor(rows, item.index)}
+                                    selected={selectedId === rows[item.index].id}
+                                    onSelect={() => select(rows[item.index].id)}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="flex h-7 shrink-0 items-center border-t border-hairline bg-panel px-3.5 text-[11px] text-ink-faint">
