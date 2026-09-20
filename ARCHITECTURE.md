@@ -270,7 +270,7 @@ sc create TraceMQ binPath= "C:\tracemq\tracemq.exe" start= auto
 
 ```
 tracemq.exe            ~45 MB   (frontend inside)
-appsettings.json       broker, port, retention window
+appsettings.json       Urls, broker, retention window, ring bounds
 ```
 
 Database at `C:\ProgramData\CodeIT\tracemq\data.db`.
@@ -289,6 +289,7 @@ Database at `C:\ProgramData\CodeIT\tracemq\data.db`.
 | **QoS 0 for the subscription**             | The logger must never become a slow consumer that makes the broker queue for it.                                                                                |
 | **`ORDER BY ts` under a live tail**        | Millisecond timestamps collide constantly at 1500 msg/s, so the same row comes back twice, or never, as new rows land. Page by `id`.                            |
 | **`GetString` on the payload column**      | `payload` is a BLOB. Reading it as a string throws or mangles on the first non-UTF-8 payload. Decode explicitly, fall back to base64.                           |
+| **No `Urls` in appsettings**               | `launchSettings.json` is development-only and is not published, so without `Urls` the shipped binary takes the framework default of port 5000 — which on macOS is AirPlay Receiver, answering 403 while Kestrel reports it is listening.                 |
 | **Binding a config array over a default**  | The configuration binder APPENDS to a collection property that already holds items, so a default of `["codeit/#"]` plus the same value in appsettings subscribes twice and every message is recorded twice. Default the property empty.                |
 | **`CommonApplicationData` off Windows**    | It is `%ProgramData%` on Windows and `/usr/share` elsewhere, which is not writable. A Production build crashed at startup on macOS and Linux before reaching any configuration.                                                                        |
 | **A completed channel is not a wait**      | Once ingest completes the message channel, its awaiter returns synchronously forever. Re-awaiting it in a loop is a spin that burns cores with nothing in the log. Latch it and wait on something else.                                                |
