@@ -21,6 +21,14 @@ public sealed class WriterService : BackgroundService
         using var connection = new SqliteConnection(_connectionString);
         await connection.OpenAsync(stoppingToken);
 
+        var pragma = connection.CreateCommand();
+        pragma.CommandText = """
+            PRAGMA journal_mode=WAL;
+            PRAGMA synchronous=NORMAL;
+            PRAGMA busy_timeout=5000;
+            """;
+        await pragma.ExecuteNonQueryAsync(stoppingToken);
+
         var createTable = connection.CreateCommand();
         createTable.CommandText = """
             CREATE TABLE IF NOT EXISTS messages (

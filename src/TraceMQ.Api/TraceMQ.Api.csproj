@@ -7,14 +7,37 @@
     <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
   </PropertyGroup>
 
+  <!-- Publish shape, per ARCHITECTURE.md section 7: one self-contained executable with
+       the frontend inside. Guarded on RuntimeIdentifier so a plain `dotnet build` / `dotnet run`
+       during development stays framework-dependent and fast. Pass the RID on the command
+       line (`-r win-x64`) rather than pinning it here, so macOS and Windows both work. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Microsoft.Data.Sqlite carries a native e_sqlite3 library; without this the
+         single-file publish quietly becomes two files. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.86" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.FileProviders.Embedded" Version="10.*" />
     <Content Remove="wwwroot\**" />
-    <EmbeddedResource Include="wwwroot\**" />
     <PackageReference Include="MQTTnet" Version="5.2.0.1603" />
   </ItemGroup>
+
+  <!-- BuildFrontend below writes the frontend into wwwroot, but MSBuild evaluates ItemGroups
+       before any target runs — so a glob up in an ItemGroup is empty on a clean tree, and the
+       publish quietly produces an exe with no SPA inside that then crashes on startup. Collect
+       the files in a target instead: this runs after BuildFrontend and before the embedded-files
+       manifest is calculated (PrepareResourceNames). -->
+  <Target Name="EmbedFrontend" BeforeTargets="PrepareForBuild">
+    <ItemGroup>
+      <EmbeddedResource Include="wwwroot/**" />
+    </ItemGroup>
+  </Target>
 
   <Target Name="BuildFrontend" BeforeTargets="BeforeBuild" Condition="'$(Configuration)'=='Release'">
     <Exec Command="npm ci" WorkingDirectory="../../web" />

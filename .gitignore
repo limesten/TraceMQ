@@ -2,5 +2,8 @@ bin/
 obj/
 node_modules/
 src/TraceMQ.Api/wwwroot/
-*.db
+*.db*
 ARCHITECTURE.md
+loadtest
+dist/
+.DS_Store

@@ -40,7 +40,6 @@ public sealed class MqttIngestService : BackgroundService
                 e.ApplicationMessage.Retain);
 
             _writer.TryWrite(msg);
-            _log.LogInformation("queued {Topic}", msg.Topic);
 
             return Task.CompletedTask;
         };
