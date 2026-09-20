@@ -6,6 +6,8 @@ export interface MessageRow {
     qos: number;
     retained: boolean;
     size: number;
+    /** A flattened head of the payload. Null when the payload is not text. */
+    preview: string | null;
 }
 
 export interface MessageDetail extends MessageRow {

@@ -10,6 +10,7 @@ const row = (id: number): MessageRow => ({
     qos: 0,
     retained: false,
     size: 2,
+    preview: '{"n":1}',
 });
 
 describe('mergeRows', () => {
