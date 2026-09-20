@@ -1,4 +1,7 @@
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using TraceMQ.Api.Storage;
 
 namespace TraceMQ.Tests;
@@ -128,5 +131,68 @@ public class SchemaTests
         var ex = Assert.Throws<InvalidOperationException>(() => Initialize(db));
 
         Assert.Contains("newer than this build", ex.Message);
+    }
+}
+
+public class SqliteConnectionFactoryTests
+{
+    private sealed class Env(string name, string root) : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = name;
+        public string ApplicationName { get; set; } = "TraceMQ.Tests";
+        public string ContentRootPath { get; set; } = root;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private static SqliteConnectionFactory Build(StorageOptions options, string environment, string root) =>
+        new(Options.Create(options), new Env(environment, root));
+
+    [Fact]
+    public void AnExplicitPathWins()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "tracemq-tests", Guid.NewGuid().ToString("n"));
+        var wanted = Path.Combine(root, "custom", "data.db");
+
+        var factory = Build(new StorageOptions { DbPath = wanted }, "Production", root);
+
+        Assert.Equal(wanted, factory.DbPath);
+        Assert.True(Directory.Exists(Path.GetDirectoryName(wanted)));
+    }
+
+    [Fact]
+    public void DevelopmentKeepsTheDatabaseBesideTheProject()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "tracemq-tests", Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(root);
+
+        var factory = Build(new StorageOptions(), "Development", root);
+
+        Assert.Equal(Path.Combine(root, "tracemq.db"), factory.DbPath);
+    }
+
+    [Fact]
+    public void ProductionResolvesSomewhereWritableOnThisPlatform()
+    {
+        // The regression: CommonApplicationData is %ProgramData% on Windows but /usr/share
+        // elsewhere, so a Production build crashed at startup on macOS and Linux before
+        // reaching any configuration.
+        var root = Path.Combine(Path.GetTempPath(), "tracemq-tests", Guid.NewGuid().ToString("n"));
+        Directory.CreateDirectory(root);
+
+        var factory = Build(new StorageOptions(), "Production", root);
+
+        Assert.EndsWith(Path.Combine("CodeIT", "tracemq", "data.db"), factory.DbPath);
+        Assert.True(Directory.Exists(Path.GetDirectoryName(factory.DbPath)));
+    }
+
+    [Fact]
+    public void AnUnwritablePathSaysWhatToChange()
+    {
+        var unwritable = OperatingSystem.IsWindows() ? @"\\?\Z:\nope\data.db" : "/proc/nope/data.db";
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => Build(new StorageOptions { DbPath = unwritable }, "Production", "."));
+
+        Assert.Contains("Storage:DbPath", ex.Message);
     }
 }
