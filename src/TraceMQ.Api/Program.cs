@@ -35,6 +35,7 @@ builder.Services.AddSingleton(_ => Channel.CreateBounded<LogMessage>(
 ));
 
 builder.Services.AddSingleton(_ => new MessageRing(100_000));
+builder.Services.AddSingleton(_ => new RecentKeys(20));
 
 builder.Services.AddSingleton(sp => CorrelationPaths.Load(
     sp.GetRequiredService<SqliteConnectionFactory>(),
@@ -54,6 +55,7 @@ Schema.Initialize(factory, schemaLog);
 // Rule 5: ids come from ingest. Continue from what is already on disk, or a restart hands
 // out ids the database already holds and the live-to-history handoff breaks.
 app.Services.GetRequiredService<MessageRing>().SeedFrom(Schema.LastMessageId(factory));
+app.Services.GetRequiredService<RecentKeys>().SeedFrom(factory);
 
 // Serilog writes beside the database, which is a directory a service account can write to.
 var logDirectory = Path.Combine(Path.GetDirectoryName(factory.DbPath)!, "logs");
