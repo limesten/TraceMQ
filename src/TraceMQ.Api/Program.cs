@@ -8,12 +8,49 @@ using TraceMQ.Api.Endpoints;
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
 using Serilog;
+using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Without this a service's working directory is C:\Windows\System32, so config loading
 // fails in a way that looks like nothing happening at all. No-op off Windows.
 builder.Host.UseWindowsService();
+
+// Logging is established before anything else, so whatever fails below has somewhere to say
+// so. Serilog has to be attached to the host here, ahead of Build(): assigning Log.Logger on
+// its own leaves the framework's ILogger writing to the console and nowhere else, which under
+// a Windows service means no diagnostics at all.
+//
+// The log file sits beside the database, the one directory a service account is sure to be
+// able to write to. That path therefore has to be resolved without the container, which is
+// what ResolvePath and EnsureDirectory are public for.
+var storageOptions =
+    builder.Configuration.GetSection("Storage").Get<StorageOptions>() ?? new StorageOptions();
+var dbPath = SqliteConnectionFactory.ResolvePath(storageOptions, builder.Environment);
+SqliteConnectionFactory.EnsureDirectory(dbPath);
+
+var logDirectory = Path.Combine(Path.GetDirectoryName(dbPath)!, "logs");
+Directory.CreateDirectory(logDirectory);
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    // Serilog does not read the Logging:LogLevel section, and replacing the provider means
+    // that section no longer applies to anything. Restate its one rule here, or every poll
+    // from the UI writes a request line and the day's file is noise.
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .WriteTo.Console()
+    .WriteTo.File(
+        Path.Combine(logDirectory, "tracemq-.log"),
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14)
+    // Last, so a Serilog section in appsettings.json can override the defaults above rather
+    // than being overridden by them.
+    .ReadFrom.Configuration(builder.Configuration)
+    .CreateLogger();
+
+// dispose: true hands the logger's lifetime to the container, so the sink is flushed and
+// closed on a clean shutdown.
+builder.Services.AddSerilog(Log.Logger, dispose: true);
 
 builder.Services.Configure<MqttOptions>(builder.Configuration.GetSection("Mqtt"));
 builder.Services.Configure<StorageOptions>(builder.Configuration.GetSection("Storage"));
@@ -66,17 +103,6 @@ Schema.Initialize(factory, schemaLog);
 // out ids the database already holds and the live-to-history handoff breaks.
 app.Services.GetRequiredService<MessageRing>().SeedFrom(Schema.LastMessageId(factory));
 app.Services.GetRequiredService<RecentKeys>().SeedFrom(factory);
-
-// Serilog writes beside the database, which is a directory a service account can write to.
-var logDirectory = Path.Combine(Path.GetDirectoryName(factory.DbPath)!, "logs");
-Directory.CreateDirectory(logDirectory);
-Log.Logger = new LoggerConfiguration()
-    .ReadFrom.Configuration(builder.Configuration)
-    .WriteTo.File(
-        Path.Combine(logDirectory, "tracemq-.log"),
-        rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 14)
-    .CreateLogger();
 
 var files = new ManifestEmbeddedFileProvider(Assembly.GetExecutingAssembly(), "wwwroot");
 var opts = new StaticFileOptions { FileProvider = files };

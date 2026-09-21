@@ -16,19 +16,8 @@ public sealed class SqliteConnectionFactory
     public SqliteConnectionFactory(IOptions<StorageOptions> options, IHostEnvironment env)
     {
         DbPath = ResolvePath(options.Value, env);
+        EnsureDirectory(DbPath);
 
-        var directory = Path.GetDirectoryName(DbPath)!;
-        try
-        {
-            Directory.CreateDirectory(directory);
-        }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
-        {
-            throw new InvalidOperationException(
-                $"Cannot create the database directory '{directory}'. Set Storage:DbPath in " +
-                "appsettings.json (or the Storage__DbPath environment variable) to a writable " +
-                "location.", ex);
-        }
         ConnectionString = new SqliteConnectionStringBuilder
         {
             DataSource = DbPath,
@@ -61,7 +50,11 @@ public sealed class SqliteConnectionFactory
         return connection;
     }
 
-    private static string ResolvePath(StorageOptions options, IHostEnvironment env)
+    /// <summary>
+    /// Public and static because Program.cs needs the directory before the container exists:
+    /// the log file lives beside the database, so both have to agree on one answer.
+    /// </summary>
+    public static string ResolvePath(StorageOptions options, IHostEnvironment env)
     {
         if (!string.IsNullOrWhiteSpace(options.DbPath))
         {
@@ -81,5 +74,26 @@ public sealed class SqliteConnectionFactory
             : Environment.SpecialFolder.LocalApplicationData);
 
         return Path.Combine(root, "CodeIT", "tracemq", "data.db");
+    }
+
+    /// <summary>
+    /// Creates the directory the database (and the log file next to it) lives in. The error
+    /// message is the whole point: an unwritable install directory is the failure that only
+    /// shows up at the customer, and it has to say what to change.
+    /// </summary>
+    public static void EnsureDirectory(string dbPath)
+    {
+        var directory = Path.GetDirectoryName(dbPath)!;
+        try
+        {
+            Directory.CreateDirectory(directory);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            throw new InvalidOperationException(
+                $"Cannot create the database directory '{directory}'. Set Storage:DbPath in " +
+                "appsettings.json (or the Storage__DbPath environment variable) to a writable " +
+                "location.", ex);
+        }
     }
 }
