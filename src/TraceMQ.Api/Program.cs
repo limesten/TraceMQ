@@ -95,14 +95,31 @@ builder.Services.AddHostedService<RetentionService>();
 var app = builder.Build();
 
 // The database has to exist and be at the current schema before any hosted service runs.
-var factory = app.Services.GetRequiredService<SqliteConnectionFactory>();
-var schemaLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Schema");
-Schema.Initialize(factory, schemaLog);
+//
+// Wrapped because this is the one startup step that would otherwise fail silently. The host
+// logs its own failures — a taken port arrives as "Hosting failed to start", stack trace and
+// all — and an unwritable directory fails earlier, before there is a file to write to at all.
+// A corrupt or locked data.db throws right here instead, between the two, and under a Windows
+// service there is no console for it to land on.
+try
+{
+    var factory = app.Services.GetRequiredService<SqliteConnectionFactory>();
+    var schemaLog = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Schema");
+    Schema.Initialize(factory, schemaLog);
 
-// Rule 5: ids come from ingest. Continue from what is already on disk, or a restart hands
-// out ids the database already holds and the live-to-history handoff breaks.
-app.Services.GetRequiredService<MessageRing>().SeedFrom(Schema.LastMessageId(factory));
-app.Services.GetRequiredService<RecentKeys>().SeedFrom(factory);
+    // Rule 5: ids come from ingest. Continue from what is already on disk, or a restart hands
+    // out ids the database already holds and the live-to-history handoff breaks.
+    app.Services.GetRequiredService<MessageRing>().SeedFrom(Schema.LastMessageId(factory));
+    app.Services.GetRequiredService<RecentKeys>().SeedFrom(factory);
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Startup failed preparing the database at {DbPath}", dbPath);
+    // Nothing disposes the container on the way out of a top-level throw, so the sink has to
+    // be closed here or the reason for the crash is the one line that never reaches the file.
+    Log.CloseAndFlush();
+    throw;
+}
 
 var files = new ManifestEmbeddedFileProvider(Assembly.GetExecutingAssembly(), "wwwroot");
 var opts = new StaticFileOptions { FileProvider = files };
