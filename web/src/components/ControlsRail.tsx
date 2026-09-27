@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../api';
-import { keyColor } from '../correlationColor';
+import { keyColor, shortKey } from '../correlationColor';
 import { formatDelta } from '../format';
 import { useView } from '../store';
 import { TimeRangeControl } from './TimeRangeControl';
@@ -109,6 +109,11 @@ export function PathEditor({ initial, onDone }: { initial: string[]; onDone: () 
     );
 }
 
+/** Under a second is "just now": "240ms ago" is precision nobody reading this list wants. */
+function formatAge(ms: number): string {
+    return ms < 1000 ? 'just now' : `${formatDelta(ms)} ago`;
+}
+
 /** A clock that advances on its own, for relative timestamps. */
 function useTicker(everyMs: number): number {
     const [now, setNow] = useState(() => Date.now());
@@ -127,7 +132,7 @@ const fieldClass =
 export function ControlsRail() {
     const view = useView();
 
-    const { data: recent = [] } = useQuery({
+    const { data: recent = [], dataUpdatedAt } = useQuery({
         queryKey: ['recentKeys'],
         queryFn: api.recentKeys,
         refetchInterval: view.paused ? false : 5000,
@@ -137,7 +142,9 @@ export function ControlsRail() {
 
     // Date.now() during render never updates, so "2 min ago" would stay "2 min ago" until
     // the query happened to refetch. Tick it deliberately instead.
-    const now = useTicker(30_000);
+    // The query also moves it: a key seen since the last tick would otherwise be younger
+    // than "now", and a negative age renders as a dash.
+    const now = Math.max(useTicker(30_000), dataUpdatedAt);
 
     return (
         <aside className="flex w-[264px] shrink-0 flex-col gap-[18px] overflow-y-auto border-r border-hairline bg-panel px-4 py-[18px] scroll-thin">
@@ -235,17 +242,21 @@ export function ControlsRail() {
                             // The left edge carries the key's colour, the same one its rows show
                             // in the table's Key column.
                             style={{ borderLeftColor: color }}
-                            className={`flex flex-col gap-0.5 rounded border border-l-[3px] px-2 py-[7px] text-left ${
+                            // The tail, as in the table; the whole key is one hover away.
+                            title={entry.key}
+                            className={`flex items-baseline gap-2 rounded border border-l-[3px] px-2 py-[7px] text-left ${
                                 active
                                     ? 'border-accent bg-selected'
                                     : 'border-hairline hover:border-control hover:bg-hover'
                             }`}
                         >
-                            <span className="font-mono text-[10.5px] tracking-tight" style={{ color }}>
-                                {entry.key}
+                            <span className="font-mono text-[11px] tracking-tight" style={{ color }}>
+                                {shortKey(entry.key)}
                             </span>
+                            <span className="grow" />
                             <span className="text-[10px] text-ink-faint">
-                                {formatDelta(now - entry.lastSeenTs)} ago · {entry.count} messages
+                                {formatAge(now - entry.lastSeenTs)} · {entry.count}{' '}
+                                {entry.count === 1 ? 'message' : 'messages'}
                             </span>
                         </button>
                     );
