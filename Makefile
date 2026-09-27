@@ -11,7 +11,7 @@ MAC_RID  := osx-$(shell uname -m | sed 's/x86_64/x64/')
 WIN_RID  := win-x64
 
 .DEFAULT_GOAL := help
-.PHONY: help run watch web frontend build check clean \
+.PHONY: help run watch web frontend build sim demo check clean \
         publish-win publish-win-fd publish-mac publish-all
 
 help: ## Show this list
@@ -37,6 +37,30 @@ frontend: $(WEB)/node_modules ## Force a frontend rebuild into the API's wwwroot
 
 build: ## Debug build of the API (does not touch the frontend)
 	dotnet build $(API)
+
+# --- traffic ----------------------------------------------------------------
+# tools/sim.py plays an assembly line in real time, ~3 minutes, via mosquitto_pub.
+# `make sim` feeds whatever is running; `make demo` is a clean instance of its own,
+# on its own port and database, with neutral topics — for screenshots and showing off.
+
+DEMO_PORT := 5028
+DEMO_DB   := $(API)/demo.db
+
+sim: ## Play a simulated line into the local broker under codeit/sim/ (~3 min)
+	python3 tools/sim.py
+
+demo: $(WWWROOT)/index.html ## Fresh instance at http://localhost:5028 on factory/#, filled by the sim
+	@rm -f $(DEMO_DB) $(DEMO_DB)-wal $(DEMO_DB)-shm
+	@Storage__DbPath=$(abspath $(DEMO_DB)) Urls=http://localhost:$(DEMO_PORT) \
+	  Mqtt__ClientId=tracemq-demo Mqtt__Topics__0='factory/#' \
+	  dotnet run --no-launch-profile --project $(API) >/dev/null & pid=$$!; \
+	trap 'kill $$pid 2>/dev/null' EXIT INT TERM; \
+	until curl -sf http://localhost:$(DEMO_PORT)/api/status >/dev/null; do \
+	  kill -0 $$pid 2>/dev/null || { echo "demo API failed to start"; exit 1; }; sleep 0.5; \
+	done; \
+	echo "==> http://localhost:$(DEMO_PORT) - set the topic filter to factory/#"; \
+	python3 tools/sim.py --root factory/line2 && \
+	echo "==> sim done; the demo stays up until Ctrl+C" && wait $$pid
 
 # --- verify -----------------------------------------------------------------
 # One gate. The exit code is the whole signal, for a human and for an agent loop

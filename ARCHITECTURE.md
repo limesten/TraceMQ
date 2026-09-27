@@ -303,7 +303,9 @@ Database at `C:\ProgramData\CodeIT\tracemq\data.db`.
 - `make watch` on the API (port 5027), `make web` for Vite on 5173 proxying `/api` to it
 - `make check` is the gate: build, xUnit, oxlint, Vitest, frontend build. Steps with
   nothing to run yet skip loudly rather than passing quietly
-- `mosquitto_pub` into a local broker for traffic, or `loadtest/orchestrator.py` for the
-  three load scenarios, which compare against the run history in `loadtest/results`
+- Traffic: `make sim` plays a simulated line (`tools/sim.py`) into the local broker;
+  `make demo` runs a clean instance on 5028 with neutral `factory/` topics and fills it.
+  `mosquitto_pub` by hand for one-offs, or `loadtest/orchestrator.py` for the three load
+  scenarios, which compare against the run history in `loadtest/results`
 
 Two moving parts in development, one artifact in production.
