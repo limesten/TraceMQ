@@ -1,6 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef } from 'react';
 import type { MessageRow } from '../api';
+import { keyColor, shortKey } from '../correlationColor';
 import { formatDay, formatDelta, formatFullTime, formatTime, groupDigits, splitTopic } from '../format';
 import { deltaFor, useLiveTail, useResolvedRange } from '../liveTail';
 import { useView } from '../store';
@@ -46,11 +47,27 @@ function Row({ row, delta, selected, showDay, onSelect }: {
             >
                 {formatDelta(delta)}
             </span>
+            <KeyCell correlationKey={row.correlationKey} />
             <span className="min-w-0 grow truncate font-mono text-[11.5px]">
                 <span className="text-topic-head">{head}</span>
                 <span className={selected ? 'text-ink' : 'text-topic'}>{tail}</span>
             </span>
         </button>
+    );
+}
+
+/** The key's tail in its colour: the rows of one sequence share it. */
+function KeyCell({ correlationKey }: { correlationKey: string | null }) {
+    if (!correlationKey) {
+        return <span className="w-[52px] shrink-0 font-mono text-[11.5px] text-ink-faint">—</span>;
+    }
+
+    const color = keyColor(correlationKey);
+    return (
+        <span title={correlationKey} className="flex w-[52px] shrink-0 items-center gap-1.5 font-mono text-[11.5px]">
+            <span className="size-1.5 shrink-0 rounded-full" style={{ background: color }} />
+            <span style={{ color }}>{shortKey(correlationKey)}</span>
+        </span>
     );
 }
 
@@ -110,6 +127,7 @@ export function MessageTable() {
             <div className="flex h-[34px] shrink-0 items-center gap-3 border-b border-hairline bg-panel px-3.5 text-[10.5px] tracking-wider text-ink-faint uppercase">
                 <span className={`${showDay ? 'w-[140px]' : 'w-[92px]'} shrink-0`}>Time</span>
                 <span className="w-[58px] shrink-0 text-right">Delta</span>
+                <span className="w-[52px] shrink-0">Key</span>
                 <span className="grow">Topic</span>
             </div>
 

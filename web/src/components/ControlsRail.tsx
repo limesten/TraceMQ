@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { keyColor } from '../correlationColor';
 import { formatDelta } from '../format';
 import { useView } from '../store';
 import { TimeRangeControl } from './TimeRangeControl';
@@ -225,22 +226,22 @@ export function ControlsRail() {
                 )}
                 {recent.map((entry) => {
                     const active = view.correlationSearch === entry.key;
+                    const color = keyColor(entry.key);
                     return (
                         <button
                             key={entry.key}
                             type="button"
                             onClick={() => view.setCorrelationSearch(active ? '' : entry.key)}
-                            className={`flex flex-col gap-0.5 rounded border px-2 py-[7px] text-left ${
+                            // The left edge carries the key's colour, the same one its rows show
+                            // in the table's Key column.
+                            style={{ borderLeftColor: color }}
+                            className={`flex flex-col gap-0.5 rounded border border-l-[3px] px-2 py-[7px] text-left ${
                                 active
                                     ? 'border-accent bg-selected'
                                     : 'border-hairline hover:border-control hover:bg-hover'
                             }`}
                         >
-                            <span
-                                className={`font-mono text-[10.5px] tracking-tight ${
-                                    active ? 'text-accent' : 'text-topic'
-                                }`}
-                            >
+                            <span className="font-mono text-[10.5px] tracking-tight" style={{ color }}>
                                 {entry.key}
                             </span>
                             <span className="text-[10px] text-ink-faint">
