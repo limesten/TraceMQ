@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MessageRow } from './api';
-import { deltaFor, mergeRows } from './liveTail';
+import { appendOlder, deltaFor, mergeRows } from './liveTail';
 
 const row = (id: number): MessageRow => ({
     id,
@@ -79,5 +79,24 @@ describe('deltaFor', () => {
         const backwards = [{ ...row(2), ts: 100 }, { ...row(1), ts: 200 }];
 
         expect(deltaFor(backwards, 0)).toBe(-100);
+    });
+});
+
+describe('appendOlder', () => {
+    it('puts an older page below the rows held', () => {
+        expect(appendOlder([row(5), row(4)], [row(3), row(2)]).map((r) => r.id)).toEqual([5, 4, 3, 2]);
+    });
+
+    it('ignores rows that are not older than the last one held', () => {
+        expect(appendOlder([row(5), row(4)], [row(4), row(3)]).map((r) => r.id)).toEqual([5, 4, 3]);
+    });
+
+    it('keeps the newest rows when the cap is reached', () => {
+        expect(appendOlder([row(5), row(4)], [row(3), row(2)], 3).map((r) => r.id)).toEqual([5, 4, 3]);
+    });
+
+    it('returns the same array when the page adds nothing', () => {
+        const existing = [row(2), row(1)];
+        expect(appendOlder(existing, [])).toBe(existing);
     });
 });

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { formatDelta } from '../format';
 import { useView } from '../store';
+import { TimeRangeControl } from './TimeRangeControl';
 
 function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
     return (
@@ -173,6 +174,8 @@ export function ControlsRail() {
                     className={`${fieldClass} border-control`}
                 />
             </div>
+
+            <TimeRangeControl />
 
             <div className="flex flex-col gap-[7px]">
                 <div className="flex items-center gap-2">

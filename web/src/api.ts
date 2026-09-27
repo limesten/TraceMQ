@@ -57,6 +57,9 @@ export interface MessageQuery {
     beforeId?: number;
     topic?: string;
     correlation?: string;
+    /** Epoch ms, inclusive at both ends. */
+    from?: number;
+    to?: number;
     limit?: number;
 }
 

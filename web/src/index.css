@@ -42,6 +42,12 @@ body,
     height: 100%;
 }
 
+/* Native date pickers draw their own popups and icons; without this they come up
+   white on a dark page. */
+:root {
+    color-scheme: dark;
+}
+
 body {
     margin: 0;
     background: var(--color-ground);

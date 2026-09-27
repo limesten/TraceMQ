@@ -11,6 +11,20 @@ export function formatTime(epochMs: number): string {
     return timeFormat.format(new Date(epochMs));
 }
 
+/** 26 Sep — for the Time column once the rows can span more than one day. */
+const dayFormat = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short' });
+
+export function formatDay(epochMs: number): string {
+    return dayFormat.format(new Date(epochMs));
+}
+
+/** 2026-09-26 10:39:05.126 local — unambiguous, for a tooltip. */
+export function formatFullTime(epochMs: number): string {
+    const d = new Date(epochMs);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${formatTime(epochMs)}`;
+}
+
 export const NO_DELTA = '—';
 
 /**

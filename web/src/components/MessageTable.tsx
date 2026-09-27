@@ -1,16 +1,20 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useRef } from 'react';
 import type { MessageRow } from '../api';
-import { formatDelta, formatTime, groupDigits, splitTopic } from '../format';
-import { deltaFor, useLiveTail } from '../liveTail';
+import { formatDay, formatDelta, formatFullTime, formatTime, groupDigits, splitTopic } from '../format';
+import { deltaFor, useLiveTail, useResolvedRange } from '../liveTail';
 import { useView } from '../store';
 
 const ROW_HEIGHT = 30;
 
-function Row({ row, delta, selected, onSelect }: {
+/** Rows from the bottom at which the next older page is asked for. */
+const LOAD_OLDER_WITHIN = 40;
+
+function Row({ row, delta, selected, showDay, onSelect }: {
     row: MessageRow;
     delta: number | null;
     selected: boolean;
+    showDay: boolean;
     onSelect: () => void;
 }) {
     const { head, tail } = splitTopic(row.topic);
@@ -26,7 +30,13 @@ function Row({ row, delta, selected, onSelect }: {
                 selected ? 'border-l-accent bg-selected' : 'border-l-transparent hover:bg-hover'
             }`}
         >
-            <span className={`w-[92px] shrink-0 font-mono text-[11.5px] ${selected ? 'text-ink' : 'text-ink-dim'}`}>
+            <span
+                title={formatFullTime(row.ts)}
+                className={`${showDay ? 'w-[140px]' : 'w-[92px]'} shrink-0 font-mono text-[11.5px] ${
+                    selected ? 'text-ink' : 'text-ink-dim'
+                }`}
+            >
+                {showDay && <span className="text-ink-faint">{formatDay(row.ts)} </span>}
                 {formatTime(row.ts)}
             </span>
             <span
@@ -46,7 +56,14 @@ function Row({ row, delta, selected, onSelect }: {
 
 export function MessageTable() {
     const { selectedId, select, autoScroll, toggleAutoScroll, correlationSearch } = useView();
-    const { rows, pending, flush, state, error } = useLiveTail();
+    const { rows, pending, flush, hasMore, loadOlder, state, error } = useLiveTail();
+    const range = useResolvedRange();
+
+    // hh:mm:ss alone is ambiguous once the rows cover more than one calendar day. Rows are
+    // newest-first, so the first and last are the ends of what is held.
+    const showDay =
+        rows.length > 1 &&
+        new Date(rows[0].ts).toDateString() !== new Date(rows[rows.length - 1].ts).toDateString();
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -74,11 +91,24 @@ export function MessageTable() {
     };
 
     const items = virtualizer.getVirtualItems();
+    const lastIndex = items.length > 0 ? items[items.length - 1].index : -1;
+
+    // Nearing the bottom asks for the page before it. The hook ignores repeats while one is
+    // in flight, so this can fire on every scroll frame.
+    useEffect(() => {
+        if (hasMore && lastIndex >= rows.length - LOAD_OLDER_WITHIN) loadOlder();
+    }, [hasMore, lastIndex, rows.length, loadOlder]);
+
+    const emptyReason = correlationSearch
+        ? 'that correlation key'
+        : range.kind === 'ok'
+          ? 'this time range'
+          : 'this filter';
 
     return (
         <section className="flex min-w-[300px] grow flex-col">
             <div className="flex h-[34px] shrink-0 items-center gap-3 border-b border-hairline bg-panel px-3.5 text-[10.5px] tracking-wider text-ink-faint uppercase">
-                <span className="w-[92px] shrink-0">Time</span>
+                <span className={`${showDay ? 'w-[140px]' : 'w-[92px]'} shrink-0`}>Time</span>
                 <span className="w-[58px] shrink-0 text-right">Delta</span>
                 <span className="grow">Topic</span>
             </div>
@@ -104,7 +134,7 @@ export function MessageTable() {
                 {state === 'error' && <p className="p-3.5 font-mono text-xs text-warn">{error}</p>}
                 {state === 'ready' && rows.length === 0 && (
                     <p className="p-3.5 text-xs text-ink-faint">
-                        No messages match {correlationSearch ? 'that correlation key' : 'this filter'}.
+                        No messages match {emptyReason}.
                     </p>
                 )}
                 {rows.length > 0 && (
@@ -124,6 +154,7 @@ export function MessageTable() {
                                     row={rows[item.index]}
                                     delta={deltaFor(rows, item.index)}
                                     selected={selectedId === rows[item.index].id}
+                                    showDay={showDay}
                                     onSelect={() => select(rows[item.index].id)}
                                 />
                             ))}
@@ -134,6 +165,7 @@ export function MessageTable() {
 
             <div className="flex h-7 shrink-0 items-center border-t border-hairline bg-panel px-3.5 text-[11px] text-ink-faint">
                 {groupDigits(rows.length)} rows
+                {hasMore && <span className="ml-1.5">· scroll for older</span>}
             </div>
         </section>
     );
