@@ -35,8 +35,6 @@ Start-Service TraceMQ
 - The path must point to the exe, not the folder.
 - Keep the double quotes inside the single quotes. Without them a path with spaces fails.
 - Stop it with `Stop-Service TraceMQ`, remove it with `sc.exe delete TraceMQ`.
-- In PowerShell, write `sc.exe`. Plain `sc` is a different command (`Set-Content`).
-
 ## Storage
 
 Messages are stored in a local SQLite database, one file:
