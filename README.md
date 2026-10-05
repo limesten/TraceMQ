@@ -28,7 +28,7 @@ sequence across all topics in a browser.
 From an administrator PowerShell:
 
 ```powershell
-New-Service -Name TraceMQ -BinaryPathName '"C:\tracemq\TraceMQ.Api.exe"' -StartupType Automatic
+New-Service -Name TraceMQ -BinaryPathName '"C:\tracemq\TraceMQ.Api.exe"' -StartupType Automatic -Description "MQTT message logger and sequence tracer. Web UI at http://localhost:5027"
 Start-Service TraceMQ
 ```
 
