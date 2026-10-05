@@ -6,9 +6,20 @@ WEB      := web
 DIST     := dist
 WWWROOT  := $(API)/wwwroot
 
+WIN_RID  := win-x64
+
+# Windows has no uname or ls of its own: make runs a plain command directly, without a
+# shell, so `ls` in a recipe fails there even though PowerShell answers to it.
+ifeq ($(OS),Windows_NT)
+# No machine to detect from Windows; Apple Silicon is the likely target.
+MAC_RID  := osx-arm64
+# No $ in it: when Git's sh is on PATH make runs the line through sh, which would expand it.
+LIST_DIR  = @powershell -NoProfile -Command "Get-ChildItem '$(1)' | Format-Table Name, Length -AutoSize"
+else
 # osx-arm64 on Apple Silicon, osx-x64 on Intel.
 MAC_RID  := osx-$(shell uname -m | sed 's/x86_64/x64/')
-WIN_RID  := win-x64
+LIST_DIR  = @ls -lh $(1)
+endif
 
 .DEFAULT_GOAL := help
 .PHONY: help run watch web frontend build sim demo check clean \
@@ -93,16 +104,16 @@ check: $(WEB)/node_modules ## Build, lint and test everything; the goal gate
 
 publish-win: ## Windows exe, self-contained, one file (~50 MB, no runtime needed)
 	dotnet publish $(API) -c Release -r $(WIN_RID) -o $(DIST)/$(WIN_RID)
-	@ls -lh $(DIST)/$(WIN_RID)
+	$(call LIST_DIR,$(DIST)/$(WIN_RID))
 
 publish-win-fd: ## Windows exe, framework-dependent (~5 MB, needs ASP.NET Core 10 on the box)
 	dotnet publish $(API) -c Release -r $(WIN_RID) --self-contained false \
 	  -p:PublishSingleFile=true -o $(DIST)/$(WIN_RID)-fd
-	@ls -lh $(DIST)/$(WIN_RID)-fd
+	$(call LIST_DIR,$(DIST)/$(WIN_RID)-fd)
 
 publish-mac: ## macOS binary, self-contained, one file — for trying the real artifact locally
 	dotnet publish $(API) -c Release -r $(MAC_RID) -o $(DIST)/$(MAC_RID)
-	@ls -lh $(DIST)/$(MAC_RID)
+	$(call LIST_DIR,$(DIST)/$(MAC_RID))
 
 publish-all: publish-win publish-mac ## Both of the above
 
