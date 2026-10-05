@@ -43,8 +43,6 @@ Messages are stored in a local SQLite database, one file:
 C:\ProgramData\CodeIT\tracemq\data.db
 ```
 
-Log files are written next to it, in `C:\ProgramData\CodeIT\tracemq\logs\`.
-
 Set `Storage:DbPath` in `appsettings.json` to store it somewhere else.
 
 Old messages are deleted by two rules in `appsettings.json`, whichever hits first:
@@ -54,6 +52,25 @@ Old messages are deleted by two rules in `appsettings.json`, whichever hits firs
   deleted, down to 90% of it.
 
 Both are checked at startup and every 10 minutes.
+
+## Logs
+
+Log files are written next to the database:
+
+```
+C:\ProgramData\CodeIT\tracemq\logs\tracemq-20261005.log
+```
+
+- One file per day. The last 14 days are kept.
+- If it is moved with `Storage:DbPath`, the logs move with it, into a `logs` folder beside it.
+- Started from a terminal, the same log is also printed there.
+- Start here if TraceMQ does not start, or does not connect to the broker.
+
+To follow today's log live:
+
+```powershell
+Get-Content "C:\ProgramData\CodeIT\tracemq\logs\tracemq-$(Get-Date -f yyyyMMdd).log" -Wait -Tail 50
+```
 
 ## Capacity
 
