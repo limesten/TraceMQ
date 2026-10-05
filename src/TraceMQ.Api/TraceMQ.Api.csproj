@@ -42,6 +42,18 @@
     </ItemGroup>
   </Target>
 
+  <!-- The published folder is what gets zipped and handed to a colleague, so it carries the
+       README too — minus its Development section, which is for this repo, not for the exe.
+       Everything from that heading down is cut; the repo README stays the one source. -->
+  <Target Name="PublishReadme" AfterTargets="Publish">
+    <PropertyGroup>
+      <ReadmeText>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../README.md'))</ReadmeText>
+      <ReadmeCut>$(ReadmeText.IndexOf('## Development'))</ReadmeCut>
+      <ReadmeText Condition="'$(ReadmeCut)' != '-1'">$(ReadmeText.Substring(0, $(ReadmeCut)).TrimEnd())</ReadmeText>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(PublishDir)README.md" Lines="$([MSBuild]::Escape($(ReadmeText)))" Overwrite="true" />
+  </Target>
+
   <Target Name="BuildFrontend" BeforeTargets="BeforeBuild" Condition="'$(Configuration)'=='Release'">
     <Exec Command="npm ci" WorkingDirectory="../../web" />
     <Exec Command="npm run build" WorkingDirectory="../../web" />
