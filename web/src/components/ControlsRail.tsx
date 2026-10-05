@@ -129,6 +129,53 @@ function useTicker(everyMs: number): number {
 const fieldClass =
     'h-8 w-full rounded-md border bg-ground px-2.5 font-mono text-xs text-ink placeholder:text-ink-faint';
 
+/**
+ * The topic filter, applied on Apply or Enter rather than per keystroke. A half-typed filter
+ * matches nothing, and an empty table is no help when the rows on screen are what you are
+ * reading the topic off. The draft is local; the store holds only what was applied. Escape
+ * puts the draft back.
+ */
+function TopicFilterField() {
+    const applied = useView((s) => s.topicFilter);
+    const setTopicFilter = useView((s) => s.setTopicFilter);
+    const [draft, setDraft] = useState(applied);
+    const dirty = draft.trim() !== applied;
+
+    return (
+        <form
+            className="flex flex-col gap-[7px]"
+            onSubmit={(e) => {
+                e.preventDefault();
+                setTopicFilter(draft.trim());
+            }}
+        >
+            <label htmlFor="topicFilter" className="text-[11px] tracking-wide text-ink-dim">
+                Topic filter
+            </label>
+            <div className="flex gap-1.5">
+                <input
+                    id="topicFilter"
+                    type="text"
+                    spellCheck={false}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape') setDraft(applied);
+                    }}
+                    className={`${fieldClass} min-w-0 ${dirty ? 'border-accent' : 'border-control'}`}
+                />
+                <button
+                    type="submit"
+                    disabled={!dirty}
+                    className="h-8 shrink-0 rounded-md border border-accent bg-accent-fill px-3 text-xs font-medium text-accent disabled:border-control disabled:bg-transparent disabled:text-ink-faint"
+                >
+                    Apply
+                </button>
+            </div>
+        </form>
+    );
+}
+
 export function ControlsRail() {
     const view = useView();
 
@@ -169,19 +216,7 @@ export function ControlsRail() {
                 </div>
             </div>
 
-            <div className="flex flex-col gap-[7px]">
-                <label htmlFor="topicFilter" className="text-[11px] tracking-wide text-ink-dim">
-                    Topic filter
-                </label>
-                <input
-                    id="topicFilter"
-                    type="text"
-                    spellCheck={false}
-                    value={view.topicFilter}
-                    onChange={(e) => view.setTopicFilter(e.target.value)}
-                    className={`${fieldClass} border-control`}
-                />
-            </div>
+            <TopicFilterField />
 
             <TimeRangeControl />
 
