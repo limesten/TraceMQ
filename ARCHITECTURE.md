@@ -38,7 +38,7 @@ Five components inside the one host:
 | `MqttIngestService` | `BackgroundService` | One MQTT client. Subscribes to configured wildcards. Extracts the correlation key. Pushes to a bounded channel. Never touches the database. |
 | `WriterService`     | `BackgroundService` | Owns the single SQLite writer connection. Drains the channel and batch-inserts, and runs queued work between batches.                   |
 | `WriterQueue`       | singleton           | How retention, the correlation backfill and settings get a write done without opening a second connection.                              |
-| `RetentionService`  | `BackgroundService` | Deletes rows past the retention window on a timer, through the queue.                                                                   |
+| `RetentionService`  | `BackgroundService` | Deletes rows past the retention window, and the oldest rows past `Storage:MaxDbSizeMb`, on a timer, through the queue.                  |
 | `WebApplication`    | ASP.NET Core        | Read-only API plus the embedded React app.                                                                                              |
 
 The live pane reads the **in-memory ring buffer**, bounded by BOTH message count and total

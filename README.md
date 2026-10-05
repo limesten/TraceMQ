@@ -14,7 +14,7 @@ sequence across all topics in a browser.
 - Correlation paths can be changed in the UI. Existing messages are re-indexed.
 - Filter by topic, date, date range or time window.
 - Delta column shows the time between messages, so stops and gaps stand out.
-- Old messages are deleted automatically after 7 days.
+- Old messages are deleted automatically after 7 days, or past an optional size limit.
 - One exe, with the web UI built in. No install, no external database.
 
 ## Running it
@@ -47,6 +47,14 @@ Log files are written next to it, in `C:\ProgramData\CodeIT\tracemq\logs\`.
 
 Set `Storage:DbPath` in `appsettings.json` to store it somewhere else.
 
+Old messages are deleted by two rules in `appsettings.json`, whichever hits first:
+
+- `Storage:RetentionDays` (default 7). Messages older than this are deleted.
+- `Storage:MaxDbSizeMb` (default 0, no limit). Above this size the oldest messages are
+  deleted, down to 90% of it.
+
+Both are checked at startup and every 10 minutes.
+
 ## Capacity
 
 Tested on a laptop with a local Mosquitto broker:
@@ -69,7 +77,8 @@ The limit was the broker, not TraceMQ.
 - **Dropped counter.** The header shows how many messages were lost because TraceMQ could
   not keep up. It should stay at 0.
 - **Disk size.** The database grows with traffic and payload size, and levels off once
-  retention starts deleting. It does not shrink on disk. Delete the file (with TraceMQ
+  old messages start being deleted. The file never shrinks; freed space is reused. With
+  `MaxDbSizeMb` set, the file stays close to that size. Delete the file (with TraceMQ
   stopped) to start fresh.
 - **Settings** can also be given as environment variables, for example
   `Mqtt__Host=10.0.0.5`.

@@ -12,6 +12,15 @@ public sealed class StorageOptions
 
     public int RetentionDays { get; set; } = 7;
 
+    /// <summary>
+    /// Cap on the space the messages take, in megabytes; 0 means no cap. Past it, retention
+    /// deletes the oldest messages until usage is back under <see cref="RetentionService.TrimTargetRatio"/>
+    /// of the cap. Whichever of this and <see cref="RetentionDays"/> is reached first wins.
+    /// Measured as pages in use, not file length: a delete frees pages for reuse but never
+    /// shrinks the file, so the file grows to about this size and then stays there.
+    /// </summary>
+    public long MaxDbSizeMb { get; set; }
+
     /// <summary>Rows per write transaction. See ARCHITECTURE.md section 4, rule 3.</summary>
     public int BatchSize { get; set; } = 500;
 
