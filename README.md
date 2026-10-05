@@ -23,10 +23,12 @@ sequence across all topics in a browser.
 2. Set the broker in `appsettings.json` (`Mqtt:Host`, `Mqtt:Port`).
 3. Start the exe and open <http://localhost:5027>.
 
-To run it as a Windows service:
+To run it as a Windows service, from an administrator PowerShell (use `sc.exe`, since
+`sc` alone is `Set-Content` in PowerShell):
 
-```bash
-sc create TraceMQ binPath= "C:\tracemq\TraceMQ.Api.exe" start= auto
+```powershell
+sc.exe create TraceMQ binPath= "C:\tracemq\TraceMQ.Api.exe" start= auto
+sc.exe start TraceMQ
 ```
 
 ## Storage
