@@ -6,6 +6,7 @@ using MQTTnet.Protocol;
 using TraceMQ.Api.Correlation;
 using TraceMQ.Api.Model;
 using TraceMQ.Api.Storage;
+using TraceMQ.Api.Topics;
 
 namespace TraceMQ.Api.Ingest;
 
@@ -42,7 +43,12 @@ public sealed class MqttIngestService : BackgroundService
     {
         var client = new MqttClientFactory().CreateMqttClient();
         var topics = _options.EffectiveTopics();
+        var excluded = _options.EffectiveExcludeTopics();
         _brokerState.Describe($"mqtt://{_options.Host}:{_options.Port}", topics);
+        foreach (var filter in excluded)
+        {
+            _log.LogInformation("Excluding {Topic}", filter);
+        }
         client.DisconnectedAsync += _ =>
         {
             _brokerState.SetConnected(false);
@@ -51,6 +57,13 @@ public sealed class MqttIngestService : BackgroundService
 
         client.ApplicationMessageReceivedAsync += e =>
         {
+            // Before NextId and the payload copy: an excluded message costs nothing and leaves
+            // no gap in the ids.
+            if (IsExcluded(excluded, e.ApplicationMessage.Topic))
+            {
+                return Task.CompletedTask;
+            }
+
             ReadOnlySequence<byte> payload = e.ApplicationMessage.Payload;
             var bytes = payload.ToArray();
 
@@ -125,5 +138,14 @@ public sealed class MqttIngestService : BackgroundService
         }
 
         _writer.TryComplete();
+    }
+
+    public static bool IsExcluded(IReadOnlyList<string> excluded, string topic)
+    {
+        for (var i = 0; i < excluded.Count; i++)
+        {
+            if (MqttTopicMatcher.Matches(excluded[i], topic)) return true;
+        }
+        return false;
     }
 }

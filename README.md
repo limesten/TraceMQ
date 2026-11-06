@@ -23,6 +23,20 @@ sequence across all topics in a browser.
 2. Set the broker in `appsettings.json` (`Mqtt:Host`, `Mqtt:Port`).
 3. Start the exe and open <http://localhost:5027>.
 
+### Topics
+
+`Mqtt:Topics` sets what is subscribed to (default `codeit/#`). To drop noisy topics, list
+them in `Mqtt:ExcludeTopics`. MQTT wildcards work (`+` for one level, `#` for the rest):
+
+```json
+"Mqtt": {
+  "Topics": [ "codeit/#" ],
+  "ExcludeTopics": [ "codeit/heartbeat/#", "codeit/+/status" ]
+}
+```
+
+Excluded messages are never stored or shown. Restart the exe or service after changing it.
+
 ### As a Windows service
 
 From an administrator PowerShell:

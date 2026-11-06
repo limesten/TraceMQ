@@ -52,6 +52,42 @@ public class MqttOptionsTests
     }
 
     [Fact]
+    public void ExcludeTopicsBindTrimmedAndDeduplicated()
+    {
+        var options = Bind(new()
+        {
+            ["Mqtt:ExcludeTopics:0"] = " codeit/heartbeat/# ",
+            ["Mqtt:ExcludeTopics:1"] = "codeit/heartbeat/#",
+            ["Mqtt:ExcludeTopics:2"] = "",
+        });
+
+        Assert.Equal(["codeit/heartbeat/#"], options.EffectiveExcludeTopics());
+    }
+
+    [Fact]
+    public void NoExcludeTopicsMeansNothingIsExcluded()
+    {
+        var excluded = Bind(new()).EffectiveExcludeTopics();
+
+        Assert.Empty(excluded);
+        Assert.False(MqttIngestService.IsExcluded(excluded, "codeit/anything"));
+    }
+
+    [Theory]
+    [InlineData("codeit/heartbeat", true)]
+    [InlineData("codeit/heartbeat/line1", true)]
+    [InlineData("codeit/line1/status", true)]
+    [InlineData("codeit/plc/raw", true)]
+    [InlineData("codeit/plc/raw/more", false)]
+    [InlineData("codeit/line1/events", false)]
+    public void ExcludeFiltersUseMqttWildcards(string topic, bool expected)
+    {
+        string[] excluded = ["codeit/heartbeat/#", "codeit/+/status", "codeit/plc/raw"];
+
+        Assert.Equal(expected, MqttIngestService.IsExcluded(excluded, topic));
+    }
+
+    [Fact]
     public void HostAndPortStillBind()
     {
         var options = Bind(new() { ["Mqtt:Host"] = "10.4.12.30", ["Mqtt:Port"] = "8883" });

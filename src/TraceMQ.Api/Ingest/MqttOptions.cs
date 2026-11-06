@@ -27,4 +27,18 @@ public sealed class MqttOptions
 
         return topics.Length > 0 ? topics : DefaultTopics;
     }
+
+    /// <summary>
+    /// Topic filters to drop on arrival, MQTT wildcards allowed (<c>codeit/heartbeat/#</c>,
+    /// <c>codeit/+/status</c>). A matching message is never stored or shown.
+    /// </summary>
+    public string[] ExcludeTopics { get; set; } = [];
+
+    /// <summary>The exclude filters to apply: trimmed, de-duplicated, blanks removed.</summary>
+    public IReadOnlyList<string> EffectiveExcludeTopics() =>
+        ExcludeTopics
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Select(t => t.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
 }
